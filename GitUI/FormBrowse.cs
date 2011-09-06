@@ -2120,7 +2120,7 @@ namespace GitUI
 
         void GitTree_MouseMove(object sender, MouseEventArgs e)
         {
-            TreeView gitTree = (TreeView)sender;
+            var gitTree = (TreeView)sender;
 
             if (!gitTree.Focused)
                 gitTree.Focus();
@@ -2130,12 +2130,12 @@ namespace GitUI
             if (gitTreeDragBoxFromMouseDown != Rectangle.Empty &&
                 !gitTreeDragBoxFromMouseDown.Contains(e.X, e.Y))
             {
-                StringCollection fileList = new StringCollection();
+                var fileList = new StringCollection();
 
                 //foreach (GitItemStatus item in SelectedItems)
                 if (gitTree.SelectedNode != null)
                 {
-                    GitItem item = gitTree.SelectedNode.Tag as GitItem;
+                    var item = gitTree.SelectedNode.Tag as GitItem;
                     if (item != null)
                     {
                         string fileName = GitCommands.Settings.WorkingDir + item.FileName;
@@ -2143,7 +2143,7 @@ namespace GitUI
                         fileList.Add(fileName.Replace('/', '\\'));
                     }
 
-                    DataObject obj = new DataObject();
+                    var obj = new DataObject();
                     obj.SetFileDropList(fileList);
 
                     // Proceed with the drag and drop, passing in the list item.                   
@@ -2163,45 +2163,31 @@ namespace GitUI
         
         private int getNextIdx(int curIdx, int maxIdx, bool searchBackward)
         {        
-            if(searchBackward){
-                if (curIdx == 0)
-                {
-                    curIdx = maxIdx;
-                }
-                else
-                {
-                    curIdx--;
-                }
-            } else {
-                if (curIdx == maxIdx)
-                {
-                    curIdx = 0;
-                }
-                else
-                {
-                    curIdx++;
-                }
-            }
-            return curIdx;
+            if (searchBackward)
+                return curIdx == 0 ? maxIdx : curIdx - 1;
+
+            return curIdx == maxIdx ? 0 : curIdx + 1;
         }
 
         private Tuple<int, string> getNextPatchFile(bool searchBackward)
         {
             var revisions = RevisionGrid.GetRevisions();
+            
             if (revisions.Count == 0)
                 return null;
-            int idx = DiffFiles.SelectedIndex;
-            if(idx == -1){
-                return new Tuple<int, string>(idx, null);
-            } else {
-                IList<GitItemStatus> items = DiffFiles.GitItemStatuses;
-                idx = getNextIdx(idx, items.Count - 1, searchBackward);
-                _dontUpdateOnIndexChange = true;
-                DiffFiles.SelectedIndex = idx;
-                _dontUpdateOnIndexChange = false;
-                Tuple<int, string> tuple = new Tuple<int, string>(idx, GetSelectedPatch(revisions, DiffFiles.SelectedItem));
-                return tuple;
-            }
+            
+            int selectedIndex = DiffFiles.SelectedIndex;
+            
+            if (selectedIndex == -1)
+                return new Tuple<int, string>(selectedIndex, null);
+            
+            IList<GitItemStatus> items = DiffFiles.GitItemStatuses;
+            selectedIndex = getNextIdx(selectedIndex, items.Count - 1, searchBackward);
+            _dontUpdateOnIndexChange = true;
+            DiffFiles.SelectedIndex = selectedIndex;
+            _dontUpdateOnIndexChange = false;
+            var tuple = new Tuple<int, string>(selectedIndex, GetSelectedPatch(revisions, DiffFiles.SelectedItem));
+            return tuple;
         }
 
     }

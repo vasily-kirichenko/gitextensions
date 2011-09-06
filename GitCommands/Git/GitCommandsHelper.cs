@@ -2576,6 +2576,9 @@ namespace GitCommands
 
         public static string GetGitDirectory(string repositoryPath)
         {
+            if (string.IsNullOrEmpty(repositoryPath))
+                return repositoryPath;
+
             var candidatePath = Path.Combine(repositoryPath, ".git");
             return Directory.Exists(candidatePath) ? candidatePath : repositoryPath;
         }
