@@ -1,4 +1,3 @@
-
 #basic visual studio directories
 _UpgradeReport_Files/
 [Dd]ebug*/
@@ -29,6 +28,8 @@ SimpleExt_p.c
 *.orig
 *.msi
 *.user
+*.bak
+*.[Cc]ache
 Thumbs.db
 GitPlugin/bin/*
 Setup/GitExtensions207.zip

@@ -44,6 +44,7 @@ namespace GitUI
             new TranslationString("Please select a source directory");
 
         private List<GitHead> _heads;
+        public bool ErrorOccurred { get; private set; }
 
         public FormPull()
         {
@@ -62,12 +63,15 @@ namespace GitUI
             Rebase.Checked = Settings.PullMerge == "rebase";
             Fetch.Checked = Settings.PullMerge == "fetch";
             AutoStash.Checked = Settings.AutoStash;
+            ErrorOccurred = false;
         }
 
-        public void PullAndShowDialogWhenFailed()
+        public DialogResult PullAndShowDialogWhenFailed()
         {
-            if (!PullChanges())
-                ShowDialog();
+            if (PullChanges())
+                return DialogResult.OK;
+            else
+                return ShowDialog();
         }
 
         private void BrowseSourceClick(object sender, EventArgs e)
@@ -139,7 +143,10 @@ namespace GitUI
         private void PullClick(object sender, EventArgs e)
         {
             if (PullChanges())
+            {
+                DialogResult = DialogResult.OK;
                 Close();
+            }
         }
 
         public bool PullChanges()
@@ -194,7 +201,7 @@ namespace GitUI
             FormProcess process = null;
             if (Fetch.Checked)
             {
-                process = new FormProcess(GitCommandHelpers.FetchCmd(source, Branches.Text, null));
+                process = new FormRemoteProcess(GitCommandHelpers.FetchCmd(source, Branches.Text, null));
             }
             else
             {
@@ -203,13 +210,18 @@ namespace GitUI
                     localBranch = null;
 
                 if (Merge.Checked)
-                    process = new FormProcess(GitCommandHelpers.PullCmd(source, Branches.Text, localBranch, false));
+                    process = new FormRemoteProcess(GitCommandHelpers.PullCmd(source, Branches.Text, localBranch, false));
                 else if (Rebase.Checked)
-                    process = new FormProcess(GitCommandHelpers.PullCmd(source, Branches.Text, localBranch, true));
+                    process = new FormRemoteProcess(GitCommandHelpers.PullCmd(source, Branches.Text, localBranch, true));
             }
 
             if (process != null)
+            {
+                if (!PullAll())
+                    process.Remote = source;
                 process.ShowDialog();
+                ErrorOccurred = process.ErrorOccurred();
+            }
 
             try
             {

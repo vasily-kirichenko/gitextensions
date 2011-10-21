@@ -2543,7 +2543,10 @@ Henk Westhuis &lt;henk_westhuis@hotmail.com&gt;</Value>
         <TranslationItem Name="_mergeConflictsCaption" Property="Text">
           <Value>合并冲突</Value>
         </TranslationItem>
-        <TranslationItem Name="_noFilesStaged" Property="Text">
+        <TranslationItem Name="_noFilesStagedAndNothingToCommit" Property="Text">
+          <Value>此次提交没有载入任何文件。</Value>
+        </TranslationItem>
+        <TranslationItem Name="_noFilesStagedAndConfirmAnEmptyMergeCommit" Property="Text">
           <Value>此次提交没有载入任何文件。您确认要提交吗？</Value>
         </TranslationItem>
         <TranslationItem Name="_noStagedChanges" Property="Text">

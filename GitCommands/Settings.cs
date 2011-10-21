@@ -13,8 +13,8 @@ namespace GitCommands
     public static class Settings
     {
         //Constants
-        public static readonly string GitExtensionsVersionString = "2.24";
-        public static readonly int GitExtensionsVersionInt = 224;
+        public static readonly string GitExtensionsVersionString = "2.25";
+        public static readonly int GitExtensionsVersionInt = 225;
 
         //semi-constants
         public static readonly char PathSeparator = '\\';
@@ -35,6 +35,13 @@ namespace GitCommands
 
             //Make applicationdatapath version dependent
             ApplicationDataPath = Application.UserAppDataPath.Replace(Application.ProductVersion, string.Empty);
+        }
+
+        private static bool? _focusControlOnHover;
+        public static bool FocusControlOnHover
+        {
+            get { return SafeGet("focuscontrolonhover", true, ref _focusControlOnHover); }
+            set { SafeSet("focuscontrolonhover", value, ref _focusControlOnHover); }
         }
 
         private static int? _UserMenuLocationX;
@@ -276,7 +283,7 @@ namespace GitCommands
             {
                 _encoding = value;
 
-                if (Application.UserAppDataRegistry == null)
+                if (VersionIndependentRegKey == null)
                     return;
 
                 string encoding = "";
@@ -647,7 +654,7 @@ namespace GitCommands
 
         public static void SetInstallDir(string dir)
         {
-            if (Application.UserAppDataRegistry != null)
+            if (VersionIndependentRegKey != null)
                 SetValue("InstallDir", dir);
         }
 
@@ -672,7 +679,7 @@ namespace GitCommands
 
         public static bool IsBareRepository()
         {
-            return !Directory.Exists(WorkingDir + PathSeparator + ".git");
+            return GitCommandHelpers.IsBareRepository(WorkingDir);
         }
 
         public static string WorkingDirGitDir()
@@ -740,6 +747,13 @@ namespace GitCommands
             { }
         }
 
+        public static bool? _dashboardShowCurrentBranch;
+        public static bool DashboardShowCurrentBranch
+        {
+            get { return SafeGet("dashboardshowcurrentbranch", true, ref _dashboardShowCurrentBranch); }
+            set { SafeSet("dashboardshowcurrentbranch", value, ref _dashboardShowCurrentBranch); }
+        }
+
         public static string _ownScripts;
         public static string ownScripts
         {
@@ -752,6 +766,13 @@ namespace GitCommands
         {
             get { return SafeGet("pushalltags", false, ref _pushAllTags); }
             set { SafeSet("pushalltags", value, ref _pushAllTags); }
+        }
+
+        private static bool? _AutoPullOnRejected;
+        public static bool AutoPullOnRejected
+        {
+            get { return SafeGet("AutoPullOnRejected", false, ref _AutoPullOnRejected); }
+            set { SafeSet("AutoPullOnRejected", value, ref _AutoPullOnRejected); }
         }
 
         public static string GetGitExtensionsFullPath()
@@ -768,7 +789,7 @@ namespace GitCommands
 
         private static T SafeGet<T>(string key, T defaultValue, ref T field, Func<string, T> converter)
         {
-            if (field == null && Application.UserAppDataRegistry != null)
+            if (field == null && VersionIndependentRegKey != null)
             {
                 var value = GetValue<object>(key, null);
                 field = value == null ? defaultValue : converter(value.ToString());
@@ -829,7 +850,8 @@ namespace GitCommands
         {
             get
             {
-                return Application.UserAppDataRegistry.Name.Replace("\\" + Application.ProductVersion, string.Empty);
+                return string.Concat(Registry.CurrentUser, "\\Software\\GitExtensions\\GitExtensions");
+                //return Application.UserAppDataRegistry.Name.Replace("\\" + Application.ProductVersion, string.Empty);
             }
         }
 
@@ -844,7 +866,7 @@ namespace GitCommands
             ///// BEGIN TEMPORARY CODE TO CONVERT OLD VERSION DEPENDENT REGISTRY TO NEW 
             ///// VERSION INDEPENDENT REGISTRY KEY!
             /////////////////////////////////////////////////////////////////////////////////////
-            value = (T)Registry.GetValue(Application.UserAppDataRegistry.Name.Replace(Application.ProductVersion, "1.0.0.0"), name, null);
+            value = (T)Registry.GetValue(VersionIndependentRegKey + "\\1.0.0.0", name, null);
 
             if (value != null)
             {

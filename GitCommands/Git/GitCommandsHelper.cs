@@ -1815,9 +1815,9 @@ namespace GitCommands
             int lastNewLinePos = trimmedStatus.LastIndexOfAny(new char[] { '\n', '\r' });
             if (lastNewLinePos > 0)
             {
-                if (trimmedStatus.IndexOf('\0') > lastNewLinePos) //Warning at beginning
+                if (trimmedStatus.IndexOf('\0') < lastNewLinePos) //Warning at end
                     trimmedStatus = trimmedStatus.Substring(0, lastNewLinePos).Trim(new char[] { '\n', '\r' });
-                else                                              //Warning at end
+                else                                              //Warning at beginning
                     trimmedStatus = trimmedStatus.Substring(lastNewLinePos).Trim(new char[] { '\n', '\r' });
             }
 
@@ -2137,7 +2137,17 @@ namespace GitCommands
             return RunCmd(Settings.GitCommand, "reset HEAD -- \"" + FixPath(file) + "\"");
         }
 
-        public static string GetSelectedBranch(string repositoryPath)
+
+        public static bool IsBareRepository(string repositoryPath)
+        {
+            return !Directory.Exists(repositoryPath + Settings.PathSeparator + ".git");
+        }
+
+
+        /// <summary>
+        /// Dirty but fast. This sometimes fails.
+        /// </summary>
+        public static string GetSelectedBranchFast(string repositoryPath)
         {
             string head;
             string headFileName = Path.Combine(GetGitDirectory(repositoryPath), "HEAD");
@@ -2145,9 +2155,26 @@ namespace GitCommands
             {
                 head = File.ReadAllText(headFileName);
                 if (!head.Contains("ref:"))
-                    head = "(no branch)";
+                    return "(no branch)";
             }
             else
+            {
+                return string.Empty;
+            }
+            
+            if (!string.IsNullOrEmpty(head))
+            {
+                return head.Replace("ref:", "").Replace("refs/heads/", string.Empty).Trim();
+            }
+
+            return string.Empty;
+        }
+
+        public static string GetSelectedBranch(string repositoryPath)
+        {
+            string head = GetSelectedBranchFast(repositoryPath);
+
+            if (string.IsNullOrEmpty(head))
             {
                 int exitcode;
                 head = RunCmd(Settings.GitCommand, "symbolic-ref HEAD", out exitcode);
@@ -2155,12 +2182,7 @@ namespace GitCommands
                     return "(no branch)";
             }
 
-            if (!string.IsNullOrEmpty(head))
-            {
-                return head.Replace("ref:", "").Replace("refs/heads/", string.Empty).Trim();
-            }
-
-            return string.Empty;
+            return head;
         }
 
         public static string GetSelectedBranch()
@@ -2254,7 +2276,7 @@ namespace GitCommands
             // filter duplicates out of the result because options -c and -m may return 
             // same files at times
             return RunCmd(Settings.GitCommand, "ls-files -z -o -m -c \"" + filePattern + "\"")
-                .Split(new[] {'\0', '\n'}, StringSplitOptions.RemoveEmptyEntries)
+                .Split(new[] { '\0', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Distinct()
                 .ToList();
         }
@@ -2482,9 +2504,19 @@ namespace GitCommands
             return null;
         }
 
+        public static string RecodeString(string s) {
+
+            Encoding logoutputEncoding = GitCommandHelpers.GetLogoutputEncoding();
+            if (logoutputEncoding != Settings.Encoding)
+                s = logoutputEncoding.GetString(Settings.Encoding.GetBytes(s));
+
+            return s;
+        }
+
         public static string GetPreviousCommitMessage(int numberBack)
         {
-            return RunCmd(Settings.GitCommand, "log -n 1 HEAD~" + numberBack + " --pretty=format:%s%n%n%b");
+            //+"--encoding=" + Settings.Encoding.HeaderName doesn't work
+            return RecodeString(RunCmd(Settings.GitCommand, "log -n 1 HEAD~" + numberBack + " --pretty=format:%s%n%n%b "));
         }
 
         public static string MergeBranch(string branch)

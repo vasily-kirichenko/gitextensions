@@ -24,9 +24,16 @@ namespace GitUI
 
             Bitmap icon = GetRepositoryIcon(repository);
 
-            var branchName = GitCommands.GitCommandHelpers.GetSelectedBranch(repository.Path);
+
+            string branchName = string.Empty;
+
+            if (GitCommands.Settings.DashboardShowCurrentBranch)
+            {
+                if (!GitCommands.GitCommandHelpers.IsBareRepository(repository.Path))
+                    branchName = GitCommands.GitCommandHelpers.GetSelectedBranchFast(repository.Path);
+            }
+
             Initialize(icon, repository.Path, repository.Title, repository.Description, branchName);
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
         }
 
         public DashboardItem(Bitmap icon, string title)

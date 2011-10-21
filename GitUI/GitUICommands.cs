@@ -138,7 +138,7 @@ namespace GitUI
         {
             if (!Settings.ValidWorkingDir())
             {
-                MessageBox.Show("The current directory is not a valid git repsoitory.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("The current directory is not a valid git repository.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
 
@@ -374,21 +374,25 @@ namespace GitUI
 
         public bool StartPullDialog()
         {
-            if (!RequiresValidWorkingDir())
-                return false;
-
-            if (!InvokeEvent(PrePull))
-                return true;
-
-            new FormPull().ShowDialog();
-
-            InvokeEvent(PostPull);
-
-            return true;
+            return StartPullDialog(false);
         }
 
         public bool StartPullDialog(bool pullOnShow)
         {
+            bool errorOccurred;
+            return StartPullDialog(pullOnShow, out errorOccurred);
+        }
+
+        /// <summary>
+        /// Starts pull dialog
+        /// </summary>
+        /// <param name="pullOnShow"></param>
+        /// <param name="pullCompleted">true if pull completed with no errors</param>
+        /// <returns>if revision grid should be refreshed</returns>
+        public bool StartPullDialog(bool pullOnShow, out bool pullCompleted)
+        {
+            pullCompleted = false;
+
             if (!RequiresValidWorkingDir())
                 return false;
 
@@ -396,16 +400,22 @@ namespace GitUI
                 return true;
 
             FormPull formPull = new FormPull();
+            DialogResult dlgResult;
             if (pullOnShow)
-                formPull.PullAndShowDialogWhenFailed();
+                dlgResult = formPull.PullAndShowDialogWhenFailed();
             else
-                formPull.ShowDialog();
+                dlgResult = formPull.ShowDialog();
 
-            InvokeEvent(PostPull);
+            if (dlgResult == DialogResult.OK)
+            {
+                InvokeEvent(PostPull);
+                pullCompleted = !formPull.ErrorOccurred;                
+            }
 
-            return true;
+            return true;//maybe InvokeEvent should have 'needRefresh' out parameter?
         }
-                
+
+        
         public bool StartViewPatchDialog()
         {
             if (!InvokeEvent(PreViewPatch))

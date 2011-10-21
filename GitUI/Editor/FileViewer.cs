@@ -84,7 +84,9 @@ namespace GitUI.Editor
         void _internalFileViewer_MouseMove(object sender, MouseEventArgs e)
         {
             this.OnMouseMove(e);
-            _internalFileViewer.FocusTextArea();
+
+            if (Settings.FocusControlOnHover)
+                _internalFileViewer.FocusTextArea();
         }
 
         void _internalFileViewer_SelectedLineChanged(object sender, int selectedLine)
@@ -227,12 +229,17 @@ namespace GitUI.Editor
             _currentScrollPos = ScrollPos;
         }
 
+        public void ResetCurrentScrollPos()
+        {
+            _currentScrollPos = 0;
+        }
+
         private void RestoreCurrentScrollPos()
         {
             if (_currentScrollPos < 0)
                 return;
             ScrollPos = _currentScrollPos;
-            _currentScrollPos = 0;
+            ResetCurrentScrollPos();
         }
 
 

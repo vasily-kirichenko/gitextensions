@@ -4,20 +4,21 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using GitCommands;
-using GitUI.Tag;
-using ResourceManager.Translation;
-using System.Text.RegularExpressions;
 using GitUI.Hotkey;
 using GitUI.Script;
+using GitUI.Tag;
+using Gravatar;
+using ResourceManager.Translation;
 
 namespace GitUI
 {
     public enum RevisionGridLayout
     {
-        FilledBranchesSmall = 1, 
+        FilledBranchesSmall = 1,
         FilledBranchesSmallWithGraph = 2,
         Small = 3,
         SmallWithGraph = 4,
@@ -76,7 +77,7 @@ namespace GitUI
 
             NormalFont = SystemFonts.DefaultFont;
             Loading.Paint += Loading_Paint;
-            
+
             Revisions.CellPainting += RevisionsCellPainting;
             Revisions.KeyDown += RevisionsKeyDown;
 
@@ -580,6 +581,23 @@ namespace GitUI
                 ForceRefreshRevisions();
         }
 
+        private class RevisionGraphInMemFilterOr : RevisionGraphInMemFilter
+        {
+            private RevisionGraphInMemFilter fFilter1;
+            private RevisionGraphInMemFilter fFilter2;
+            public RevisionGraphInMemFilterOr(RevisionGraphInMemFilter aFilter1,
+                                              RevisionGraphInMemFilter aFilter2)
+            {
+                fFilter1 = aFilter1;
+                fFilter2 = aFilter2;
+            }
+
+            public override bool PassThru(GitRevision rev)
+            {
+                return fFilter1.PassThru(rev) || fFilter2.PassThru(rev);
+            }
+        }
+
         private class RevisionGridInMemFilter : RevisionGraphInMemFilter
         {
             private readonly bool _IgnoreCase;
@@ -627,6 +645,22 @@ namespace GitUI
                        CheckCondition(_CommitterFilter, _CommitterFilterRegex, rev.Committer) &&
                        CheckCondition(_MessageFilter, _MessageFilterRegex, rev.Message);
             }
+
+            public static RevisionGridInMemFilter CreateIfNeeded(string authorFilter,
+                                                                 string committerFilter,
+                                                                 string messageFilter,
+                                                                 bool ignoreCase)
+            {
+                if (!(string.IsNullOrEmpty(authorFilter) &&
+                      string.IsNullOrEmpty(committerFilter) &&
+                      string.IsNullOrEmpty(messageFilter)))
+                    return new RevisionGridInMemFilter(authorFilter,
+                                                       committerFilter,
+                                                       messageFilter,
+                                                       ignoreCase);
+                else
+                    return null;
+            }
         }
 
         public void ReloadHotkeys()
@@ -658,6 +692,11 @@ namespace GitUI
                 if (newCurrentCheckout == CurrentCheckout)
                 {
                     LastSelectedRows = Revisions.SelectedIds;
+                }
+                else
+                {
+                    // This is a new checkout, so ensure the variable is cleared out.
+                    LastSelectedRows = null;
                 }
 
                 Revisions.ClearSelection();
@@ -694,20 +733,28 @@ namespace GitUI
                 if (Settings.ShowGitNotes && LogParam.Contains(" --not --glob=notes --not"))
                     LogParam = LogParam.Replace("  --not --glob=notes --not", string.Empty);
 
+                RevisionGridInMemFilter revisionFilterIMF = RevisionGridInMemFilter.CreateIfNeeded(_revisionFilter.GetInMemAuthorFilter(),
+                                                                                                   _revisionFilter.GetInMemCommitterFilter(),
+                                                                                                   _revisionFilter.GetInMemMessageFilter(),
+                                                                                                   _revisionFilter.GetIgnoreCase());
+                RevisionGridInMemFilter filterBarIMF = RevisionGridInMemFilter.CreateIfNeeded(InMemAuthorFilter,
+                                                                                              InMemCommitterFilter,
+                                                                                              InMemMessageFilter,
+                                                                                              InMemFilterIgnoreCase);
+                RevisionGraphInMemFilter revGraphIMF;
+                if (revisionFilterIMF != null && filterBarIMF != null)
+                    revGraphIMF = new RevisionGraphInMemFilterOr(revisionFilterIMF, filterBarIMF);
+                else if (revisionFilterIMF != null)
+                    revGraphIMF = revisionFilterIMF;
+                else
+                    revGraphIMF = filterBarIMF;
+
                 _revisionGraphCommand = new RevisionGraph { BranchFilter = BranchFilter, LogParam = LogParam + Filter + _revisionFilter.GetFilter() };
                 _revisionGraphCommand.Updated += GitGetCommitsCommandUpdated;
                 _revisionGraphCommand.Exited += GitGetCommitsCommandExited;
                 _revisionGraphCommand.Error += _revisionGraphCommand_Error;
+                _revisionGraphCommand.InMemFilter = revGraphIMF;
                 //_revisionGraphCommand.BeginUpdate += ((s, e) => Revisions.Invoke((Action) (() => Revisions.Clear())));
-
-                if (!(string.IsNullOrEmpty(InMemAuthorFilter) &&
-                      string.IsNullOrEmpty(InMemCommitterFilter) &&
-                      string.IsNullOrEmpty(InMemMessageFilter)))
-                    _revisionGraphCommand.InMemFilter = new RevisionGridInMemFilter(InMemAuthorFilter,
-                                                                                    InMemCommitterFilter,
-                                                                                    InMemMessageFilter,
-                                                                                    InMemFilterIgnoreCase);
-
                 _revisionGraphCommand.Execute();
                 LoadRevisions();
                 SetRevisionsLayout();
@@ -929,7 +976,7 @@ namespace GitUI
 
             Brush foreBrush = new SolidBrush(foreColor);
             var rowFont = revision.Guid == CurrentCheckout /*&& !showRevisionCards*/ ? HeadFont : NormalFont;
-            
+
             switch (column)
             {
                 case 1: //Description!!
@@ -968,13 +1015,13 @@ namespace GitUI
                         {
                             heads.Sort(new Comparison<GitHead>(
                                            (left, right) =>
-                                               {
-                                                   if (left.IsTag != right.IsTag)
-                                                       return right.IsTag.CompareTo(left.IsTag);
-                                                   if (left.IsRemote != right.IsRemote)
-                                                       return left.IsRemote.CompareTo(right.IsRemote);
-                                                   return left.Name.CompareTo(right.Name);
-                                               }));
+                                           {
+                                               if (left.IsTag != right.IsTag)
+                                                   return right.IsTag.CompareTo(left.IsTag);
+                                               if (left.IsRemote != right.IsRemote)
+                                                   return left.IsRemote.CompareTo(right.IsRemote);
+                                               return left.Name.CompareTo(right.Name);
+                                           }));
 
                             foreach (var head in heads)
                             {
@@ -982,15 +1029,15 @@ namespace GitUI
                                     continue;
 
                                 Font refsFont;
-                              
+
                                 if (IsFilledBranchesLayout())
                                 {
                                     //refsFont = head.Selected ? rowFont : new Font(rowFont, FontStyle.Regular);
                                     refsFont = rowFont;
 
-//                                    refsFont = head.Selected
-//                                        ? new Font(rowFont, rowFont.Style | FontStyle.Italic)
-//                                        : rowFont;
+                                    //refsFont = head.Selected
+                                    //    ? new Font(rowFont, rowFont.Style | FontStyle.Italic)
+                                    //    : rowFont;
                                 }
                                 else
                                 {
@@ -1040,7 +1087,7 @@ namespace GitUI
                                                                                head.SelectedHeadMergeSource);
 
                                         offset += extraOffset;
-                                        headBounds.Offset((int) (extraOffset + 1), 0);
+                                        headBounds.Offset((int)(extraOffset + 1), 0);
                                     }
 
                                     DrawColumnText(e.Graphics, headName, refsFont, headColor, headBounds);
@@ -1063,12 +1110,12 @@ namespace GitUI
                             int gravatarLeft = e.CellBounds.Left + baseOffset + 2;
 
 
-                            Image gravatar = Gravatar.GravatarService.GetImageFromCache(revision.AuthorEmail + gravatarSize.ToString() + ".png", revision.AuthorEmail, Settings.AuthorImageCacheDays, gravatarSize, Settings.ApplicationDataPath + "Images\\", Gravatar.GravatarService.FallBackService.MonsterId);
+                            Image gravatar = Gravatar.GravatarService.GetImageFromCache(revision.AuthorEmail + gravatarSize.ToString() + ".png", revision.AuthorEmail, Settings.AuthorImageCacheDays, gravatarSize, Settings.ApplicationDataPath + "Images\\", FallBackService.MonsterId);
 
                             if (gravatar == null && !string.IsNullOrEmpty(revision.AuthorEmail))
                             {
                                 ThreadPool.QueueUserWorkItem(o =>
-                                        Gravatar.GravatarService.LoadCachedImage(revision.AuthorEmail + gravatarSize.ToString() + ".png", revision.AuthorEmail, null, Settings.AuthorImageCacheDays, gravatarSize, Settings.ApplicationDataPath + "Images\\", RefreshGravatar, Gravatar.GravatarService.FallBackService.MonsterId));
+                                        Gravatar.GravatarService.LoadCachedImage(revision.AuthorEmail + gravatarSize.ToString() + ".png", revision.AuthorEmail, null, Settings.AuthorImageCacheDays, gravatarSize, Settings.ApplicationDataPath + "Images\\", RefreshGravatar, FallBackService.MonsterId));
                             }
 
                             if (gravatar != null)
@@ -1119,7 +1166,7 @@ namespace GitUI
 
         private void DrawColumnText(IDeviceContext dc, string text, Font font, Color color, Rectangle bounds)
         {
-            TextRenderer.DrawText(dc, text, font, bounds, color, TextFormatFlags.EndEllipsis);
+            TextRenderer.DrawText(dc, text, font, bounds, color, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
 
         private static Rectangle AdjustCellBounds(Rectangle cellBounds, float offset)
@@ -1145,7 +1192,7 @@ namespace GitUI
             return result < value ? result + 2 : result;
         }
 
-        private float DrawHeadBackground(bool isSelected, Graphics graphics, Color color, 
+        private float DrawHeadBackground(bool isSelected, Graphics graphics, Color color,
             float x, float y, float width, float height, float radius, bool isCurrentBranch,
             bool isCurentBranchMergeSource)
         {
@@ -1169,7 +1216,7 @@ namespace GitUI
 
                     var fillBrush = new LinearGradientBrush(new RectangleF(x, y, width, height), fillColor,
                                                             Lerp(fillColor, Color.White, 0.9F), 90);
-                    
+
                     // fore rectangle
                     graphics.FillPath(fillBrush, forePath);
                     // frame
@@ -1432,10 +1479,6 @@ namespace GitUI
 
         private void ApplyFilterFromRevisionFilterDialog()
         {
-            InMemAuthorFilter = _revisionFilter.GetInMemAuthorFilter();
-            InMemCommitterFilter = _revisionFilter.GetInMemCommitterFilter();
-            InMemMessageFilter = _revisionFilter.GetInMemMessageFilter();
-            InMemFilterIgnoreCase = _revisionFilter.GetIgnoreCase();
             BranchFilter = _revisionFilter.GetBranchFilter();
             SetShowBranches();
         }

@@ -266,6 +266,12 @@
       <Component Id="Dutch.gif" Guid="*">
         <File Source="..\GitUI\Translation\Dutch.gif"/>
       </Component>
+      <Component Id="German.xml" Guid="*">
+        <File Source="..\GitUI\Translation\German.xml"/>
+      </Component>
+      <Component Id="German.gif" Guid="*">
+        <File Source="..\GitUI\Translation\German.gif"/>
+      </Component>
       <Component Id="SimplifiedChinese.xml" Guid="*">
         <File Source="..\GitUI\Translation\Simplified Chinese.xml"/>
       </Component>
@@ -534,6 +540,10 @@
           <ComponentRef Id="Dutch.xml"/>
           <ComponentRef Id="Dutch.gif"/>
         </Feature>
+        <Feature Id="German" Title="German" Level="1">
+          <ComponentRef Id="German.xml"/>
+          <ComponentRef Id="German.gif"/>
+        </Feature>
         <Feature Id="Japanese" Title="Japanese" Level="1">
           <ComponentRef Id="Japanese.xml"/>
           <ComponentRef Id="Japanese.gif"/>
@@ -576,10 +586,10 @@
     </Feature>
 
     <?if $(var.IncludeRequiredSoftware) = 1 ?>
-    <Binary Id="KDiff" SourceFile="..\Bin\KDiff3Setup_0.9.95-2.exe"/>
+    <Binary Id="KDiff" SourceFile="..\Bin\KDiff3Setup_0.9.96.exe"/>
     <CustomAction Id="KDiff" Impersonate="no" BinaryKey="KDiff" Execute="deferred" ExeCommand="" Return="ignore"/>
 
-    <Binary Id="MsysGit" SourceFile="..\Bin\Git-1.7.6-preview20110708.exe"/>
+    <Binary Id="MsysGit" SourceFile="..\Bin\Git-1.7.7-preview20111014.exe"/>
     <CustomAction Id="MsysGit" Impersonate="no" BinaryKey="MsysGit" Execute="deferred" ExeCommand="" Return="ignore"/>
     <InstallExecuteSequence>
       <Custom Action="KDiff" After="InstallFiles"><![CDATA[INSTALLKDIFF3=1]]>

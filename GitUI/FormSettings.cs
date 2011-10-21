@@ -21,11 +21,14 @@ namespace GitUI
     {
         private Font diffFont;
         private const string GitExtensionsShellExName = "GitExtensionsShellEx32.dll";
+        private string IconName = "bug";
 
         public FormSettings()
         {
             InitializeComponent();
             Translate();
+
+            noImageService.Items.AddRange(GravatarService.DynamicServices.Cast<object>().ToArray());
 
             _NO_TRANSLATE_Encoding.Items.AddRange(new Object[]
                                                       {
@@ -127,6 +130,8 @@ namespace GitUI
                     _NO_TRANSLATE_Encoding.Text = "UTF32";
                 else if (Settings.Encoding == Encoding.Default)
                     _NO_TRANSLATE_Encoding.Text = "Default (" + Encoding.Default.HeaderName + ")";
+
+                focusControlOnHover.Checked = Settings.FocusControlOnHover;
 
                 usePatienceDiffAlgorithm.Checked = Settings.UsePatienceDiffAlgorithm;
 
@@ -243,6 +248,7 @@ namespace GitUI
                 GlobalUserEmail.Text = globalConfig.GetValue("user.email");
                 GlobalEditor.Text = globalConfig.GetValue("core.editor");
                 GlobalMergeTool.Text = globalConfig.GetValue("merge.tool");
+                CommitTemplatePath.Text = globalConfig.GetValue("commit.template");
 
                 SetCheckboxFromString(KeepMergeBackup, localConfig.GetValue("mergetool.keepBackup"));
 
@@ -372,6 +378,8 @@ namespace GitUI
             }
 
             GitCommandHelpers.SetEnvironmentVariable(true);
+
+            Settings.FocusControlOnHover = focusControlOnHover.Checked;
 
             Settings.UsePatienceDiffAlgorithm = usePatienceDiffAlgorithm.Checked;
 
@@ -538,6 +546,9 @@ namespace GitUI
             if (string.IsNullOrEmpty(GlobalUserEmail.Text) ||
                 !GlobalUserEmail.Text.Equals(globalConfig.GetValue("user.email")))
                 globalConfig.SetValue("user.email", GlobalUserEmail.Text);
+            if (string.IsNullOrEmpty(CommitTemplatePath.Text) ||
+                !CommitTemplatePath.Text.Equals(globalConfig.GetValue("commit.template")))
+                globalConfig.SetValue("commit.template", CommitTemplatePath.Text);
             globalConfig.SetValue("core.editor", GlobalEditor.Text);
 
             SetGlobalDiffToolToConfig(globalConfig, GlobalDiffTool.Text);
@@ -900,6 +911,9 @@ namespace GitUI
 
         private void FormSettings_Load(object sender, EventArgs e)
         {
+            if (DesignMode)
+                return;
+
             EnableSettings();
 
             WindowState = FormWindowState.Normal;
@@ -911,6 +925,7 @@ namespace GitUI
             GlobalUserName.Enabled = canFindGitCmd;
             GlobalUserEmail.Enabled = canFindGitCmd;
             GlobalEditor.Enabled = canFindGitCmd;
+            CommitTemplatePath.Enabled = canFindGitCmd;
             GlobalMergeTool.Enabled = canFindGitCmd;
             MergetoolPath.Enabled = canFindGitCmd;
             MergeToolCmd.Enabled = canFindGitCmd;
@@ -1323,27 +1338,40 @@ namespace GitUI
 
             if (GlobalMergeTool.Text.Equals("TortoiseMerge", StringComparison.CurrentCultureIgnoreCase))
             {
+                string command = "";
+
                 if (MergetoolPath.Text.ToLower().Contains("kdiff3") || MergetoolPath.Text.ToLower().Contains("p4merge"))
                     MergetoolPath.Text = "";
                 if (string.IsNullOrEmpty(MergetoolPath.Text) || !File.Exists(MergetoolPath.Text))
                 {
-                    MergetoolPath.Text = FindFileInFolders("TortoiseMerge.exe",
+                    string path = FindFileInFolders("TortoiseMerge.exe",
                                                            @"c:\Program Files (x86)\TortoiseSVN\bin\",
-                                                           @"c:\Program Files\TortoiseSVN\bin\",
+                                                           @"c:\Program Files\TortoiseSVN\bin\");
+                    command = "\"" + path +
+                                    "\" /base:\"$BASE\" /mine:\"$LOCAL\" /theirs:\"$REMOTE\" /merged:\"$MERGED\"";
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        path = FindFileInFolders("TortoiseMerge.exe",
                                                            @"c:\Program Files (x86)\TortoiseGit\bin\",
                                                            @"c:\Program Files\TortoiseGit\bin\");
+                        command = "\"" + path +
+                                    "\" -base:\"$BASE\" -mine:\"$LOCAL\" -theirs:\"$REMOTE\" -merged:\"$MERGED\"";
+                    }
 
-                    if (!File.Exists(MergetoolPath.Text))
+                    if (!File.Exists(path))
                     {
                         MergetoolPath.Text = "";
                         MessageBox.Show("Please enter the path to TortoiseMerge.exe and press suggest.",
                                         "Suggest mergetool cmd");
                         return;
                     }
+                    else
+                    {
+                        MergetoolPath.Text = path;
+                    }
                 }
 
-                MergeToolCmd.Text = "\"" + MergetoolPath.Text +
-                                    "\" /base:\"$BASE\" /mine:\"$LOCAL\" /theirs:\"$REMOTE\" /merged:\"$MERGED\"";
+                MergeToolCmd.Text = command;
                 return;
             }
 
@@ -1598,14 +1626,59 @@ namespace GitUI
 
         private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if(((TabControl)sender).TabPages[((TabControl)sender).SelectedIndex].Name.ToLower() == "tabpagehotkeys")
+            if (((TabControl)sender).TabPages[((TabControl)sender).SelectedIndex].Name.ToLower() == "tabpagehotkeys")
                 controlHotkeys.ReloadSettings();
+            else if (((TabControl)sender).TabPages[((TabControl)sender).SelectedIndex].Name.ToLower() == "scriptstab")
+                populateSplitbutton();
+
+
 
             if (GlobalMergeTool.Text.Equals("kdiff3", StringComparison.CurrentCultureIgnoreCase) &&
                 string.IsNullOrEmpty(MergeToolCmd.Text))
                 MergeToolCmd.Enabled = false;
             else
                 MergeToolCmd.Enabled = true;
+        }
+
+        private void populateSplitbutton()
+        {
+
+            System.Resources.ResourceManager rm =
+                new System.Resources.ResourceManager("GitUI.Properties.Resources",
+                            System.Reflection.Assembly.GetExecutingAssembly());
+
+            // dummy request; for some strange reason the ResourceSets are not loaded untill after the first object request... bug?
+            var dummy = rm.GetObject("dummy");
+
+            System.Resources.ResourceSet resourceSet = rm.GetResourceSet(System.Globalization.CultureInfo.CurrentUICulture, true, true);
+
+            contextMenuStrip_SplitButton.Items.Clear();
+
+            foreach (System.Collections.DictionaryEntry icon in resourceSet)
+            {
+                //add entry to toolstrip
+                if (icon.Value.GetType() == typeof(System.Drawing.Icon))
+                {
+                    //contextMenuStrip_SplitButton.Items.Add(icon.Key.ToString(), (Image)((Icon)icon.Value).ToBitmap(), SplitButtonMenuItem_Click);
+                }
+                else if (icon.Value.GetType() == typeof(Bitmap))
+                {
+                    contextMenuStrip_SplitButton.Items.Add(icon.Key.ToString(), (Image)icon.Value, SplitButtonMenuItem_Click);
+                }
+                //var aa = icon.Value.GetType();
+            }
+
+            resourceSet.Close();
+            rm.ReleaseAllResources();
+
+        }
+
+        public Bitmap ResizeBitmap(Bitmap b, int nWidth, int nHeight)
+        {
+            Bitmap result = new Bitmap(nWidth, nHeight);
+            using (Graphics g = Graphics.FromImage((Image)result))
+                g.DrawImage(b, 0, 0, nWidth, nHeight);
+            return result;
         }
 
         private void ClearImageCache_Click(object sender, EventArgs e)
@@ -2032,7 +2105,7 @@ namespace GitUI
         private void LoadScripts()
         {
             ScriptList.DataSource = ScriptManager.GetScripts();
-           
+
         }
 
         private void ClearScriptDetails()
@@ -2057,6 +2130,16 @@ namespace GitUI
             scriptEnabled.Checked = scriptInfo.Enabled;
             scriptNeedsConfirmation.Checked = scriptInfo.AskConfirmation;
             scriptEvent.SelectedItem = scriptInfo.OnEvent;
+            sbtn_icon.Image = (Image)scriptInfo.GetIcon();
+            IconName = scriptInfo.Icon;
+
+            foreach (ToolStripItem item in contextMenuStrip_SplitButton.Items)
+            {
+                if (item.ToString() == IconName)
+                {
+                    item.Font = new Font(item.Font, FontStyle.Bold);
+                }
+            }
         }
 
         private void addScriptButton_Click(object sender, EventArgs e)
@@ -2083,7 +2166,7 @@ namespace GitUI
             if (ScriptList.SelectedRows.Count > 0)
             {
                 ScriptInfo selectedScriptInfo = ScriptList.SelectedRows[0].DataBoundItem as ScriptInfo;
-                selectedScriptInfo.HotkeyCommandIdentifier = ScriptList.SelectedRows[0].Index+9000;
+                selectedScriptInfo.HotkeyCommandIdentifier = ScriptList.SelectedRows[0].Index + 9000;
                 selectedScriptInfo.Name = nameTextBox.Text;
                 selectedScriptInfo.Command = commandTextBox.Text;
                 selectedScriptInfo.Arguments = argumentsTextBox.Text;
@@ -2091,6 +2174,7 @@ namespace GitUI
                 selectedScriptInfo.Enabled = scriptEnabled.Checked;
                 selectedScriptInfo.AskConfirmation = scriptNeedsConfirmation.Checked;
                 selectedScriptInfo.OnEvent = (ScriptEvent)scriptEvent.SelectedItem;
+                selectedScriptInfo.Icon = IconName;
             }
         }
 
@@ -2165,7 +2249,7 @@ namespace GitUI
             {
                 ScriptInfo selectedScriptInfo = ScriptList.SelectedRows[0].DataBoundItem as ScriptInfo;
                 RefreshScriptDetails();
-                
+
                 removeScriptButton.Enabled = true;
                 moveDownButton.Enabled = moveUpButton.Enabled = false;
                 if (ScriptList.SelectedRows[0].Index > 0)
@@ -2206,7 +2290,7 @@ namespace GitUI
 
         protected override bool ExecuteCommand(int cmd)
         {
-            
+
             Commands command = (Commands)cmd;
 
             switch (command)
@@ -2303,10 +2387,61 @@ namespace GitUI
         private void SetCurrentDiffFont(Font font)
         {
             diffFont = font;
-            
-            diffFontChangeButton.Text = 
-                string.Format("{0}, {1}", diffFont.FontFamily.Name, (int) diffFont.Size);
 
+            diffFontChangeButton.Text =
+                string.Format("{0}, {1}", diffFont.FontFamily.Name, (int)diffFont.Size);
+
+        }
+
+        private void BrowseCommitTemplate_Click(object sender, EventArgs e)
+        {
+            CommitTemplatePath.Text = SelectFile(".", "*.txt (*.txt)|*.txt", CommitTemplatePath.Text);
+        }
+
+        private void SplitButtonMenuItem_Click(object sender, EventArgs e)
+        {
+            //reset bold item to regular
+            ToolStripMenuItem item = (ToolStripMenuItem)contextMenuStrip_SplitButton.Items.OfType<ToolStripMenuItem>().First(s => s.Font.Bold == true);
+            item.Font = new Font(contextMenuStrip_SplitButton.Font, FontStyle.Regular);
+
+            //make new item bold
+            ((ToolStripMenuItem)sender).Font = new Font(((ToolStripMenuItem)sender).Font, FontStyle.Bold);
+
+            //set new image on button
+            sbtn_icon.Image = (Image)ResizeBitmap((Bitmap)((ToolStripMenuItem)sender).Image, 12, 12);
+
+            IconName = ((ToolStripMenuItem)sender).Text;
+
+            //store variables
+            ScriptInfoEdit_Validating(sender, new System.ComponentModel.CancelEventArgs());
+        }
+
+        private void scriptEvent_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (scriptEvent.Text == ScriptEvent.ShowInUserMenuBar.ToString())
+            {
+                /*
+                string icon_name = IconName;
+                if (ScriptList.RowCount > 0)
+                {
+                    ScriptInfo scriptInfo = ScriptList.SelectedRows[0].DataBoundItem as ScriptInfo;
+                    icon_name = scriptInfo.Icon;
+                }*/
+
+                sbtn_icon.Visible = true;
+                lbl_icon.Visible = true;
+            }
+            else
+            {
+                //not a menubar item, so hide the text label and dropdown button
+                sbtn_icon.Visible = false;
+                lbl_icon.Visible = false;
+            }
+        }
+
+        private void downloadMsysgit_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            Process.Start(@"http://code.google.com/p/msysgit/");
         }
     }
 }

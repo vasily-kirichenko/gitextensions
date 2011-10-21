@@ -3,11 +3,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 using GitCommands;
+using ResourceManager.Translation;
 
 namespace GitUI
 {
     public partial class FormGitIgnore : GitExtensionsForm
     {
+        private readonly TranslationString _gitignoreOnlyInWorkingDirSupported =
+            new TranslationString(".gitignore is only supported when there is a working dir.");
+
         public string GitIgnoreFile;
 
         public FormGitIgnore()
@@ -48,13 +52,14 @@ namespace GitUI
                         Settings.WorkingDir + ".gitignore",
                         x =>
                         {
-                            // Enter a newline to work around a wierd bug 
-                            // that causes the first line to include 3 extra bytes. (encoding marker??)
-                            GitIgnoreFile = Environment.NewLine + _NO_TRANSLATE_GitIgnoreEdit.GetText().Trim();
-                            using (var tw = new StreamWriter(x, false, Settings.Encoding))
+                            this.GitIgnoreFile = _NO_TRANSLATE_GitIgnoreEdit.GetText();
+
+                            using (var file = File.OpenWrite(x))
                             {
-                                tw.Write(GitIgnoreFile);
+                                var contents = Settings.Encoding.GetBytes(this.GitIgnoreFile);
+                                file.Write(contents, 0, contents.Length);
                             }
+
                             if (closeAfterSave)
                                 Close();
                         });
@@ -74,13 +79,13 @@ namespace GitUI
         {
             RestorePosition("edit-git-ignore");
             if (!Settings.IsBareRepository()) return;
-            MessageBox.Show(".gitignore is only supported when there is a working dir.");
+            MessageBox.Show(_gitignoreOnlyInWorkingDirSupported.Text);
             Close();
         }
 
         private void AddDefaultClick(object sender, EventArgs e)
         {
-            _NO_TRANSLATE_GitIgnoreEdit.ViewText(".gitignore", 
+            _NO_TRANSLATE_GitIgnoreEdit.ViewText(".gitignore",
                 _NO_TRANSLATE_GitIgnoreEdit.GetText() +
                 Environment.NewLine + "#ignore thumbnails created by windows" +
                 Environment.NewLine + "Thumbs.db" +

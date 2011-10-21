@@ -2449,7 +2449,10 @@ Henk Westhuis &lt;henk_westhuis@hotmail.com&gt;</Value>
         <TranslationItem Name="_mergeConflictsCaption" Property="Text">
           <Value>マージの競合</Value>
         </TranslationItem>
-        <TranslationItem Name="_noFilesStaged" Property="Text">
+        <TranslationItem Name="_noFilesStagedAndNothingToCommit" Property="Text">
+          <Value>ステージされたファイルがありません。</Value>
+        </TranslationItem>
+        <TranslationItem Name="_noFilesStagedAndConfirmAnEmptyMergeCommit" Property="Text">
           <Value>ステージされたファイルがありません。本当にコミットしますか？</Value>
         </TranslationItem>
         <TranslationItem Name="_noStagedChanges" Property="Text">

@@ -19,11 +19,62 @@ using System.Drawing;
 using System.Collections.Specialized;
 using Microsoft.WindowsAPICodePack.Taskbar;
 using GitUI.Script;
+using ResourceManager.Translation;
 
 namespace GitUI
 {
     public partial class FormBrowse : GitExtensionsForm
     {
+        #region Translations
+
+        private readonly TranslationString _stashCount =
+            new TranslationString("{0} saved {1}");
+        private readonly TranslationString _stashPlural =
+            new TranslationString("stashes");
+        private readonly TranslationString _stashSingular =
+            new TranslationString("stash");
+
+        private readonly TranslationString _warningMiddleOfBisect =
+            new TranslationString("Your are in the middle of a bisect");
+        private readonly TranslationString _warningMiddleOfRebase =
+            new TranslationString("You are in the middle of a rebase");
+        private readonly TranslationString _warningMiddleOfPatchApply =
+            new TranslationString("You are in the middle of a patch apply");
+
+        private readonly TranslationString _hintUnresolvedMergeConflicts =
+            new TranslationString("There are unresolved merge conflicts!");
+
+        private static readonly TranslationString _noBranchTitle =
+            new TranslationString("no branch");
+
+        private readonly TranslationString _noSubmodulesPresent =
+            new TranslationString("No submodules");
+
+        private readonly TranslationString _saveFileFilterCurrentFormat =
+            new TranslationString("Current format");
+        private readonly TranslationString _saveFileFilterAllFiles =
+            new TranslationString("All files");
+
+        private readonly TranslationString _indexLockDeleted =
+            new TranslationString("index.lock deleted.");
+        private readonly TranslationString _indexLockNotFound =
+            new TranslationString("index.lock not found at:");
+
+        private readonly TranslationString _noReposHostPluginLoaded =
+            new TranslationString("No repository host plugin loaded.");
+        private readonly TranslationString _noReposHostPluginLoadedCaption =
+            new TranslationString("Error");
+
+        private readonly TranslationString _noReposHostFound =
+            new TranslationString("Could not find any relevant repository hosts for the currently open repository.");
+        private readonly TranslationString _noReposHostFoundCaption =
+            new TranslationString("Error");
+
+        private readonly TranslationString _noRevisionFoundError =
+            new TranslationString("No revision found.");
+
+        #endregion
+
         private readonly SynchronizationContext syncContext;
         private readonly IndexWatcher _indexWatcher = new IndexWatcher();
 
@@ -208,8 +259,7 @@ namespace GitUI
                 HideDashboard();
             else
                 ShowDashboard();
-            
-            tabControl1.Visible = validWorkingDir;
+            CommitInfoTabControl.Visible = validWorkingDir;
             commandsToolStripMenuItem.Enabled = validWorkingDir;
             manageRemoteRepositoriesToolStripMenuItem1.Enabled = validWorkingDir;
             branchSelect.Enabled = validWorkingDir;
@@ -291,7 +341,9 @@ namespace GitUI
                 tempButton.Click += new EventHandler(UserMenu_Click);
                 tempButton.Enabled = true;
                 tempButton.Visible = true;
-                tempButton.Image = GitUI.Properties.Resources.bug;
+                //tempButton.Image = GitUI.Properties.Resources.bug;
+                //scriptInfo.Icon = "Cow";
+                tempButton.Image = scriptInfo.GetIcon();
                 tempButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
                 //add to toolstrip
                 this.ToolStrip.Items.Add((ToolStripItem)tempButton);
@@ -416,8 +468,8 @@ namespace GitUI
             if (Settings.ShowStashCount)
             {
                 int stashCount = GitCommandHelpers.GetStashes().Count;
-                toolStripSplitStash.Text = string.Format("{0} saved {1}", stashCount,
-                                                         stashCount != 1 ? "stashes" : "stash");
+                toolStripSplitStash.Text = string.Format(_stashCount.Text, stashCount,
+                                                         stashCount != 1 ? _stashPlural.Text : _stashSingular.Text);
             }
             else
             {
@@ -434,7 +486,7 @@ namespace GitUI
 
                 if (_bisect == null)
                 {
-                    _bisect = new WarningToolStripItem { Text = "Your are in the middle of a bisect" };
+                    _bisect = new WarningToolStripItem { Text = _warningMiddleOfBisect.Text};
                     _bisect.Click += BisectClick;
                     statusStrip.Items.Add(_bisect);
                 }
@@ -457,8 +509,8 @@ namespace GitUI
                     _rebase = new WarningToolStripItem
                                   {
                                       Text = GitCommandHelpers.InTheMiddleOfRebase()
-                                                 ? "You are in the middle of a rebase"
-                                                 : "You are in the middle of a patch apply"
+                                                 ? _warningMiddleOfRebase.Text
+                                                 : _warningMiddleOfPatchApply.Text
                                   };
                     _rebase.Click += RebaseClick;
                     statusStrip.Items.Add(_rebase);
@@ -479,7 +531,7 @@ namespace GitUI
             {
                 if (_warning == null)
                 {
-                    _warning = new WarningToolStripItem { Text = "There are unresolved merge conflicts!" };
+                    _warning = new WarningToolStripItem { Text = _hintUnresolvedMergeConflicts.Text };
                     _warning.Click += WarningClick;
                     statusStrip.Items.Add(_warning);
                 }
@@ -520,7 +572,7 @@ namespace GitUI
                 return defaultTitle;
             string repositoryDescription = GetRepositoryShortName(workingDir);
             if (string.IsNullOrEmpty(branchName))
-                branchName = "no branch";
+                branchName = _noBranchTitle.Text;
             return string.Format(repositoryTitleFormat, repositoryDescription, branchName.Trim('(', ')'));
         }
 
@@ -603,43 +655,67 @@ namespace GitUI
             IndexWatcher.Reset();
         }
 
+        //store strings to not keep references to nodes
+        private Stack<string>  lastSelectedNodes = new Stack<string>();
+     
         private void FillFileTree()
         {
-            if (tabControl1.SelectedTab != Tree)
+            if (CommitInfoTabControl.SelectedTab != Tree)
                 return;
 
             try
             {
                 GitTree.SuspendLayout();
+                // Save state only when there is selected node                
+                if (GitTree.SelectedNode != null)
+                {
+                    TreeNode node = GitTree.SelectedNode;
+                    FileText.SaveCurrentScrollPos();
+                    lastSelectedNodes.Clear();
+                    while (node != null)
+                    {
+                        lastSelectedNodes.Push(node.Text);
+                        node = node.Parent;
+                    }
+                }
 
-                // Save state
-                var lastSelectedNodes = new Stack<TreeNode>();
-                lastSelectedNodes.Push(GitTree.SelectedNode);
-                while (lastSelectedNodes.Peek() != null && lastSelectedNodes.Peek().Parent != null)
-                    lastSelectedNodes.Push((lastSelectedNodes.Peek()).Parent);
-
-                FileText.SaveCurrentScrollPos();
 
                 // Refresh tree
                 GitTree.Nodes.Clear();
+                //restore selected file and scroll position when new selection is done
                 if (RevisionGrid.GetRevisions().Count > 0)
-                    LoadInTree(RevisionGrid.GetRevisions()[0].SubItems, GitTree.Nodes);
-                //GitTree.Sort();
-
-                // Load state
-                var currenNodes = GitTree.Nodes;
-                while (lastSelectedNodes.Count > 0 && lastSelectedNodes.Peek() != null)
                 {
-                    var next = (lastSelectedNodes.Pop()).Text;
-                    foreach (TreeNode node in currenNodes)
+                    LoadInTree(RevisionGrid.GetRevisions()[0].SubItems, GitTree.Nodes);
+                    //GitTree.Sort();
+                    TreeNode lastMatchedNode = null;
+                    // Load state
+                    var currenNodes = GitTree.Nodes;
+                    TreeNode matchedNode = null;
+                    while (lastSelectedNodes.Count > 0 && currenNodes != null)
                     {
-                        if (node.Text != next && next.Length != 40)
-                            continue;
+                        var next = lastSelectedNodes.Pop();
+                        foreach (TreeNode node in currenNodes)
+                        {
+                            if (node.Text != next && next.Length != 40)
+                                continue;
 
-                        node.Expand();
-                        GitTree.SelectedNode = node;
-                        currenNodes = node.Nodes;
+                            node.Expand();
+                            matchedNode = node;
+                            break;                            
+                        }
+                        if (matchedNode == null)
+                            currenNodes = null;
+                        else
+                        {
+                            lastMatchedNode = matchedNode;
+                            currenNodes = matchedNode.Nodes;
+                        }
                     }
+                    //if there is no exact match, don't restore scroll position
+                    if (lastMatchedNode != matchedNode)
+                        FileText.ResetCurrentScrollPos();
+                    GitTree.SelectedNode = lastMatchedNode;
+
                 }
             }
             finally
@@ -652,7 +728,7 @@ namespace GitUI
 
         private void FillDiff()
         {
-            if (tabControl1.SelectedTab != Diff)
+            if (CommitInfoTabControl.SelectedTab != Diff)
                 return;
 
             var revisions = RevisionGrid.GetRevisions();
@@ -693,7 +769,7 @@ namespace GitUI
 
         private void FillCommitInfo()
         {
-            if (tabControl1.SelectedTab != CommitInfo)
+            if (CommitInfoTabControl.SelectedTab != CommitInfo)
                 return;
 
             if (RevisionGrid.GetRevisions().Count == 0)
@@ -882,17 +958,17 @@ namespace GitUI
                     (RevisionGrid.GetRevisions()[0].Guid == GitRevision.UncommittedWorkingDirGuid ||
                      RevisionGrid.GetRevisions()[0].Guid == GitRevision.IndexGuid))
                 {
-                    if (tabControl1.TabPages.Contains(CommitInfo))
-                        tabControl1.TabPages.Remove(CommitInfo);
-                    if (tabControl1.TabPages.Contains(Tree))
-                        tabControl1.TabPages.Remove(Tree);
+                    if (CommitInfoTabControl.TabPages.Contains(CommitInfo))
+                        CommitInfoTabControl.TabPages.Remove(CommitInfo);
+                    if (CommitInfoTabControl.TabPages.Contains(Tree))
+                        CommitInfoTabControl.TabPages.Remove(Tree);
                 }
                 else
                 {
-                    if (!tabControl1.TabPages.Contains(CommitInfo))
-                        tabControl1.TabPages.Insert(0, CommitInfo);
-                    if (!tabControl1.TabPages.Contains(Tree))
-                        tabControl1.TabPages.Insert(1, Tree);
+                    if (!CommitInfoTabControl.TabPages.Contains(CommitInfo))
+                        CommitInfoTabControl.TabPages.Insert(0, CommitInfo);
+                    if (!CommitInfoTabControl.TabPages.Contains(Tree))
+                        CommitInfoTabControl.TabPages.Insert(1, Tree);
                 }
 
 
@@ -1504,7 +1580,7 @@ namespace GitUI
             }
 
             if (openSubmoduleToolStripMenuItem.DropDownItems.Count == 0)
-                openSubmoduleToolStripMenuItem.DropDownItems.Add("No submodules");
+                openSubmoduleToolStripMenuItem.DropDownItems.Add(_noSubmodulesPresent.Text);
             Cursor.Current = Cursors.Default;
         }
 
@@ -1708,10 +1784,10 @@ namespace GitUI
                     };
             fileDialog.DefaultExt = GitCommandHelpers.GetFileExtension(fileDialog.FileName);
             fileDialog.Filter =
-                "Current format (*." +
+                _saveFileFilterCurrentFormat.Text + " (*." +
                 GitCommandHelpers.GetFileExtension(fileDialog.FileName) + ")|*." +
                 GitCommandHelpers.GetFileExtension(fileDialog.FileName) +
-                "|All files (*.*)|*.*";
+                "|" + _saveFileFilterAllFiles.Text + " (*.*)|*.*";
 
             if (fileDialog.ShowDialog() == DialogResult.OK)
             {
@@ -1799,10 +1875,10 @@ namespace GitUI
             if (File.Exists(fileName))
             {
                 File.Delete(fileName);
-                MessageBox.Show("index.lock deleted.");
+                MessageBox.Show(_indexLockDeleted.Text);
             }
             else
-                MessageBox.Show("index.lock not found at: " + fileName);
+                MessageBox.Show(_indexLockNotFound.Text + " " + fileName);
         }
 
         private void saveAsToolStripMenuItem1_Click(object sender, EventArgs e)
@@ -1827,10 +1903,10 @@ namespace GitUI
                 };
             fileDialog.DefaultExt = GitCommandHelpers.GetFileExtension(fileDialog.FileName);
             fileDialog.Filter =
-                "Current format (*." +
+                _saveFileFilterCurrentFormat.Text + " (*." +
                 GitCommandHelpers.GetFileExtension(fileDialog.FileName) + ")|*." +
                 GitCommandHelpers.GetFileExtension(fileDialog.FileName) +
-                "|All files (*.*)|*.*";
+                "|" + _saveFileFilterAllFiles.Text + " (*.*)|*.*";
 
             if (fileDialog.ShowDialog() == DialogResult.OK)
             {
@@ -1948,7 +2024,7 @@ namespace GitUI
             }
             else
             {
-                MessageBox.Show(this, "No repository host plugin loaded.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, _noReposHostPluginLoaded.Text, _noReposHostPluginLoadedCaption.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1957,7 +2033,7 @@ namespace GitUI
             var repoHost = RepoHosts.TryGetGitHosterForCurrentWorkingDir();
             if (repoHost == null)
             {
-                MessageBox.Show(this, "Could not find any relevant repository hosts for the currently open repository.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, _noReposHostFound.Text, _noReposHostFoundCaption.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -1970,7 +2046,7 @@ namespace GitUI
             var repoHost = RepoHosts.TryGetGitHosterForCurrentWorkingDir();
             if (repoHost == null)
             {
-                MessageBox.Show(this, "Could not find any relevant repository hosts for the currently open repository.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, _noReposHostFound.Text, _noReposHostFoundCaption.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -2013,7 +2089,7 @@ namespace GitUI
 
         private void FindFileInSelectedCommit()
         {
-            tabControl1.SelectedTab = Tree;
+            CommitInfoTabControl.SelectedTab = Tree;
             EnabledSplitViewLayout(true);
             GitTree.Focus();
             FindFileOnClick(null, null);
@@ -2036,9 +2112,9 @@ namespace GitUI
                 case Commands.GitGui: GitCommandHelpers.RunGui(); break;
                 case Commands.GitGitK: GitCommandHelpers.RunGitK(); break;
                 case Commands.FocusRevisionGrid: RevisionGrid.Focus(); break;
-                case Commands.FocusCommitInfo: tabControl1.SelectedTab = CommitInfo; break;
-                case Commands.FocusFileTree: tabControl1.SelectedTab = Tree; GitTree.Focus(); break;
-                case Commands.FocusDiff: tabControl1.SelectedTab = Diff; DiffFiles.Focus(); break;
+                case Commands.FocusCommitInfo: CommitInfoTabControl.SelectedTab = CommitInfo; break;
+                case Commands.FocusFileTree: CommitInfoTabControl.SelectedTab = Tree; GitTree.Focus(); break;
+                case Commands.FocusDiff: CommitInfoTabControl.SelectedTab = Diff; DiffFiles.Focus(); break;
                 case Commands.Commit: CommitToolStripMenuItemClick(null, null); break;
                 case Commands.AddNotes: AddNotes(); break;
                 case Commands.FindFileInSelectedCommit: FindFileInSelectedCommit(); break;
@@ -2066,21 +2142,21 @@ namespace GitUI
             }
             else
             {
-                MessageBox.Show("No revision found.");
+                MessageBox.Show(_noRevisionFoundError.Text);
             }
         }
 
         private void toggleSplitViewLayout_Click(object sender, EventArgs e)
         {
-            EnabledSplitViewLayout(splitContainer3.Panel2.Height == 0 && splitContainer3.Height > 0);
+            EnabledSplitViewLayout(MainSplitContainer.Panel2.Height == 0 && MainSplitContainer.Height > 0);
         }
 
         private void EnabledSplitViewLayout(bool enabled)
         {
             if (enabled)
-                splitContainer3.SplitterDistance = (splitContainer3.Height / 5) * 2;
+                MainSplitContainer.SplitterDistance = (MainSplitContainer.Height / 5) * 2;
             else
-                splitContainer3.SplitterDistance = splitContainer3.Height;
+                MainSplitContainer.SplitterDistance = MainSplitContainer.Height;
         }
 
         private void editCheckedOutFileToolStripMenuItem_Click(object sender, EventArgs e)
@@ -2122,7 +2198,7 @@ namespace GitUI
         {
             var gitTree = (TreeView)sender;
 
-            if (!gitTree.Focused)
+            if (!gitTree.Focused && Settings.FocusControlOnHover)
                 gitTree.Focus();
 
             //DRAG
