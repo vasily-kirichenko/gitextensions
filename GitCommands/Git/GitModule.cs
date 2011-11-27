@@ -1972,7 +1972,7 @@ namespace GitCommands
             }
         }
 
-        public static bool IsOneBranchAncestorOfAnother(string ancestorCandidate, string branch)
+        public bool IsOneBranchAncestorOfAnother(string ancestorCandidate, string branch)
         {
             string commandResult = RunCmd(Settings.GitCommand, "branch --contains " + branch);
 

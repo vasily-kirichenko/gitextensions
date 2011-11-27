@@ -2227,7 +2227,7 @@ namespace GitUI
             if (string.IsNullOrEmpty(mergeWithBranch))
                 return false;
 
-            return !GitCommandHelpers.IsOneBranchAncestorOfAnother(currentBranch.LocalName, mergeWithBranch);
+            return new GitModule().IsOneBranchAncestorOfAnother(currentBranch.LocalName, mergeWithBranch);
         }
 
         public string GetTrackingRemoteBranchMergingWithCurrent()
