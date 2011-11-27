@@ -28,6 +28,7 @@ namespace GitUI
             FileChanges.DisableContextMenu();
 
             followFileHistoryToolStripMenuItem.Checked = Settings.FollowRenamesInFileHistory;
+            fullHistoryToolStripMenuItem.Checked = Settings.FullHistoryInFileHistory;
         }
 
         public FormFileHistory(string fileName)
@@ -132,6 +133,10 @@ namespace GitUI
                 filter = " --parents -- \"" + fileName + "\"";
             }
 
+            if (Settings.FullHistoryInFileHistory)
+            {
+                filter = string.Concat(" --full-history --simplify-by-decoration ", filter);
+            }
 
             syncContext.Post(o =>
             {
@@ -200,7 +205,7 @@ namespace GitUI
                             Diff.ViewPatch(
                                 () =>
                                 {
-                                    Patch diff = GitCommandHelpers.GetSingleDiff(revision1.Guid, revision1.Guid + "^", fileName,
+                                    Patch diff = Settings.Module.GetSingleDiff(revision1.Guid, revision1.Guid + "^", fileName,
                                                                           Diff.GetExtraDiffArguments());
                                     if (diff == null)
                                         return string.Empty;
@@ -219,7 +224,7 @@ namespace GitUI
                         {
                             Diff.ViewPatch(
                                 () =>
-                                GitCommandHelpers.GetSingleDiff(revision1.Guid, revision2.Guid, fileName,
+                                Settings.Module.GetSingleDiff(revision1.Guid, revision2.Guid, fileName,
                                                                       Diff.GetExtraDiffArguments()).Text);
                         }
                     }
@@ -240,7 +245,7 @@ namespace GitUI
         {
             if (FileChanges.GetRevisions().Count == 0)
             {
-                GitUICommands.Instance.StartCompareRevisionsDialog();
+                GitUICommands.Instance.StartCompareRevisionsDialog(this);
                 return;
             }
 
@@ -248,7 +253,7 @@ namespace GitUI
 
             var form = new FormDiffSmall();
             form.SetRevision(revision.Guid);
-            form.ShowDialog();
+            form.ShowDialog(this);
         }
 
         private void OpenWithDifftoolToolStripMenuItemClick(object sender, EventArgs e)
@@ -280,9 +285,9 @@ namespace GitUI
                     break;
             }
 
-            var output = GitCommandHelpers.OpenWithDifftool(FileName, rev1, rev2);
+            var output = Settings.Module.OpenWithDifftool(FileName, rev1, rev2);
             if (!string.IsNullOrEmpty(output))
-                MessageBox.Show(output);
+                MessageBox.Show(this, output);
         }
 
         private void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
@@ -307,9 +312,9 @@ namespace GitUI
                     GitCommandHelpers.GetFileExtension(fileDialog.FileName) + ")|*." +
                     GitCommandHelpers.GetFileExtension(fileDialog.FileName) +
                     "|All files (*.*)|*.*";
-                if (fileDialog.ShowDialog() == DialogResult.OK)
+                if (fileDialog.ShowDialog(this) == DialogResult.OK)
                 {
-                    GitCommandHelpers.SaveBlobAs(fileDialog.FileName, selectedRows[0].Guid + ":\"" + orgFileName + "\"");
+                    Settings.Module.SaveBlobAs(fileDialog.FileName, selectedRows[0].Guid + ":\"" + orgFileName + "\"");
                 }
             }
         }
@@ -319,6 +324,13 @@ namespace GitUI
             Settings.FollowRenamesInFileHistory = !Settings.FollowRenamesInFileHistory;
             followFileHistoryToolStripMenuItem.Checked = Settings.FollowRenamesInFileHistory;
 
+            ThreadPool.QueueUserWorkItem(o => LoadFileHistory(FileName));
+        }
+
+        private void fullHistoryToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Settings.FullHistoryInFileHistory = !Settings.FullHistoryInFileHistory;
+            fullHistoryToolStripMenuItem.Checked = Settings.FullHistoryInFileHistory;
             ThreadPool.QueueUserWorkItem(o => LoadFileHistory(FileName));
         }
     }

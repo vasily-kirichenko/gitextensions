@@ -2,7 +2,9 @@
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+#if !__MonoCS__
 using Microsoft.WindowsAPICodePack.Taskbar;
+#endif
 
 namespace GitUI
 {
@@ -53,6 +55,7 @@ namespace GitUI
                             ProgressBar.Style = ProgressBarStyle.Blocks;
                         ProgressBar.Value = Math.Min(100, progressValue);
 
+#if !__MonoCS__
                         if (TaskbarManager.IsPlatformSupported)
                         {
                             try
@@ -64,6 +67,7 @@ namespace GitUI
                             {
                             }
                         }
+#endif
                     }
                     Text = text;
                 };
@@ -107,6 +111,7 @@ namespace GitUI
             Ok.Focus();
             AcceptButton = Ok;
             Abort.Enabled = false;
+#if !__MonoCS__
             if (TaskbarManager.IsPlatformSupported)
             {
                 try
@@ -119,6 +124,7 @@ namespace GitUI
                 }
                 catch (InvalidOperationException) { }
             }
+#endif
 
             SuccessImage.Visible = isSuccess;
             ErrorImage.Visible = !isSuccess;
@@ -156,13 +162,18 @@ namespace GitUI
 
         public void ShowDialogOnError()
         {
+            ShowDialogOnError(null);
+        }
+
+        public void ShowDialogOnError(IWin32Window owner)
+        {
             Visible = false;
             KeepDialogOpen.Visible = false;
             Abort.Visible = false;
             showOnError = true;
             // Just hiding it still seems to draw one frame of the control
             WindowState = FormWindowState.Minimized;
-            ShowDialog();
+            ShowDialog(owner);
         }
 
         private void Ok_Click(object sender, EventArgs e)
@@ -190,6 +201,7 @@ namespace GitUI
 
         private void FormStatus_FormClosed(object sender, FormClosedEventArgs e)
         {
+#if !__MonoCS__
             if (TaskbarManager.IsPlatformSupported)
             {
                 try
@@ -198,10 +210,12 @@ namespace GitUI
                 }
                 catch (InvalidOperationException) { }
             }
+#endif
         }
 
         private void Start()
         {
+#if !__MonoCS__
             if (TaskbarManager.IsPlatformSupported)
             {
                 try
@@ -210,6 +224,7 @@ namespace GitUI
                 }
                 catch (InvalidOperationException) { }
             }
+#endif
             ProcessOutputTimer.Start(this);
             Reset();
             ProcessCallback(this);

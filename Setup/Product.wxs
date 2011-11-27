@@ -126,7 +126,7 @@
       <Component Id="GitExtensionsShellEx32.dll" Guid="*">
         <File
           Name="GitExtensionsShellEx32.dll"
-          Source="..\SimpleExt\ReleaseMinDependency\GitExtensionsShellEx.dll"
+          Source="..\SimpleExt\Release\GitExtensionsShellEx.dll"
           KeyPath="yes"/>
         
         <?foreach ShellExFileName in GitExtensionsShellEx32.dll?>
@@ -138,7 +138,7 @@
         <Condition>VersionNT64</Condition>
         <File
           Name="GitExtensionsShellEx64.dll"
-          Source="..\SimpleExt\ReleaseMinDependency64\GitExtensionsShellEx.dll"
+          Source="..\SimpleExt\Release-x64\GitExtensionsShellEx64.dll"
           KeyPath="yes"/>
 
         <?foreach ShellExFileName in GitExtensionsShellEx64.dll?>
@@ -589,7 +589,7 @@
     <Binary Id="KDiff" SourceFile="..\Bin\KDiff3Setup_0.9.96.exe"/>
     <CustomAction Id="KDiff" Impersonate="no" BinaryKey="KDiff" Execute="deferred" ExeCommand="" Return="ignore"/>
 
-    <Binary Id="MsysGit" SourceFile="..\Bin\Git-1.7.7-preview20111014.exe"/>
+    <Binary Id="MsysGit" SourceFile="..\Bin\Git-1.7.7.1-preview20111027.exe"/>
     <CustomAction Id="MsysGit" Impersonate="no" BinaryKey="MsysGit" Execute="deferred" ExeCommand="" Return="ignore"/>
     <InstallExecuteSequence>
       <Custom Action="KDiff" After="InstallFiles"><![CDATA[INSTALLKDIFF3=1]]>

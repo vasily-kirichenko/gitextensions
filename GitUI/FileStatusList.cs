@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Drawing;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using GitCommands;
 using GitUI.Properties;
@@ -21,11 +23,13 @@ namespace GitUI
             FileStatusListBox.DrawItem += new DrawItemEventHandler(FileStatusListBox_DrawItem);
             FileStatusListBox.SelectedIndexChanged += new EventHandler(FileStatusListBox_SelectedIndexChanged);
             FileStatusListBox.DoubleClick += new EventHandler(FileStatusListBox_DoubleClick);
-            FileStatusListBox.MouseMove += new MouseEventHandler(FileStatusListBox_MouseMove);
             FileStatusListBox.Sorted = true;
             FileStatusListBox.SelectionMode = SelectionMode.MultiExtended;
+#if !__MonoCS__ // TODO Drag'n'Drop doesnt work on Mono/Linux
+            FileStatusListBox.MouseMove += new MouseEventHandler(FileStatusListBox_MouseMove);
             FileStatusListBox.MouseDown += new MouseEventHandler(FileStatusListBox_MouseDown);
-            FileStatusListBox.HorizontalScrollbar = true;
+#endif
+			FileStatusListBox.HorizontalScrollbar = true;
 
             NoFiles.Visible = false;
             NoFiles.Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Italic);
@@ -65,6 +69,7 @@ namespace GitUI
             NoFiles.Text = text;
         }
 
+#if !__MonoCS__ // TODO Drag'n'Drop doesnt work on Mono/Linux
         void FileStatusListBox_MouseDown(object sender, MouseEventArgs e)
         {
             //SELECT
@@ -108,7 +113,7 @@ namespace GitUI
                     dragBoxFromMouseDown = Rectangle.Empty;
             }
         }
-
+#endif
 
         public override ContextMenuStrip ContextMenuStrip
         {
@@ -134,6 +139,7 @@ namespace GitUI
             }
         }
 
+#if !__MonoCS__ // TODO Drag'n'Drop doesnt work on Mono/Linux
         private Rectangle dragBoxFromMouseDown;
 
         void FileStatusListBox_MouseMove(object sender, MouseEventArgs e)
@@ -202,6 +208,7 @@ namespace GitUI
                 }
             }
         }
+#endif
 
         public IList<GitItemStatus> SelectedItems
         {
@@ -267,7 +274,7 @@ namespace GitUI
         void FileStatusListBox_DoubleClick(object sender, EventArgs e)
         {
             if (this.DoubleClick == null)
-                GitUICommands.Instance.StartFileHistoryDialog(SelectedItem.Name, Revision);
+                GitUICommands.Instance.StartFileHistoryDialog(this, SelectedItem.Name, Revision);
             else
                 this.DoubleClick(sender, e);
         }
@@ -393,6 +400,37 @@ namespace GitUI
                 
         }
 
+		public int SetSelectionFilter(string filter)
+		{
+			return FilterFiles(RegexFor(filter));
+		}
 
+    	private static Regex RegexFor(string value)
+		{
+			return string.IsNullOrEmpty(value)
+				? new Regex("^$", RegexOptions.Compiled)
+				: new Regex(value, RegexOptions.Compiled);
+		}
+
+		private int FilterFiles(Regex filter)
+		{
+			try
+			{
+				SuspendLayout();
+
+				var items = FileStatusListBox.Items.Cast<GitItemStatus>().ToList();
+				for (var i = 0; i < items.Count; i++)
+				{
+					FileStatusListBox.SetSelected(i, filter.IsMatch(items[i].Name));
+				}
+
+				return FileStatusListBox.SelectedIndices.Count;
+			}
+			finally
+			{
+				ResumeLayout(true);
+			}
+		}
     }
+
 }

@@ -13,6 +13,7 @@ using GitUI.Script;
 using GitUI.Tag;
 using Gravatar;
 using ResourceManager.Translation;
+using System.IO;
 
 namespace GitUI
 {
@@ -30,22 +31,12 @@ namespace GitUI
 
     public partial class RevisionGrid : GitExtensionsControl
     {
-        private readonly TranslationString _authorCaption = new TranslationString("Author");
-        private readonly TranslationString _authorDateCaption = new TranslationString("Author date");
-        private readonly TranslationString _commitDateCaption = new TranslationString("Commit date");
         private readonly IndexWatcher _indexWatcher = new IndexWatcher();
-        private readonly TranslationString _messageCaption = new TranslationString("Message");
         private readonly TranslationString _currentWorkingDirChanges = new TranslationString("Current uncommitted changes");
         private readonly TranslationString _currentIndex = new TranslationString("Commit index");
-        private readonly TranslationString _secondsAgo = new TranslationString("{0} seconds ago");
-        private readonly TranslationString _minutesAgo = new TranslationString("{0} minutes ago");
-        private readonly TranslationString _hourAgo = new TranslationString("{0} hour ago");
-        private readonly TranslationString _hoursAgo = new TranslationString("{0} hours ago");
-        private readonly TranslationString _dayAgo = new TranslationString("{0} day ago");
-        private readonly TranslationString _daysAgo = new TranslationString("{0} days ago");
-        private readonly TranslationString _monthAgo = new TranslationString("{0} month ago");
-        private readonly TranslationString _monthsAgo = new TranslationString("{0} months ago");
-        private readonly TranslationString _yearsAgo = new TranslationString("{0} years ago");
+        private readonly TranslationString _areYouSureYouWantCheckout = new TranslationString("Are you sure to checkout the selected revision");
+        private readonly TranslationString _areYouSureYouWantCheckoutCaption = new TranslationString("Checkout revision");
+        private readonly TranslationString _droppingFilesBlocked = new TranslationString("For you own protection dropping more than 10 patch files at once is blocked!");
 
         private const int NODE_DIMENSION = 8;
         private const int LANE_WIDTH = 13;
@@ -73,6 +64,10 @@ namespace GitUI
 
             base.InitLayout();
             InitializeComponent();
+#if !__MonoCS__ // animated GIFs are not supported in Mono/Linux
+            this.Loading.Image = global::GitUI.Properties.Resources.loadingpanel;
+#endif
+            
             Translate();
 
             NormalFont = SystemFonts.DefaultFont;
@@ -348,9 +343,7 @@ namespace GitUI
             Revisions.Rows[searchResult.Value].Selected = true;
 
             Revisions.CurrentCell = Revisions.Rows[searchResult.Value].Cells[1];
-
         }
-
 
         private int? SearchForward(int startIndex, string searchString)
         {
@@ -361,14 +354,14 @@ namespace GitUI
 
             for (index = startIndex; index < Revisions.RowCount; ++index)
             {
-                if (((GitRevision)Revisions.GetRowData(index)).MatchesSearchString(searchString))
+                if (GetRevision(index).MatchesSearchString(searchString))
                     return index;
             }
 
             // We didn't find it so start searching from the top
             for (index = 0; index < startIndex; ++index)
             {
-                if (((GitRevision)Revisions.GetRowData(index)).MatchesSearchString(searchString))
+                if (GetRevision(index).MatchesSearchString(searchString))
                     return index;
             }
 
@@ -384,14 +377,14 @@ namespace GitUI
 
             for (index = startIndex; index >= 0; --index)
             {
-                if (((GitRevision)Revisions.GetRowData(index)).MatchesSearchString(searchString))
+                if (GetRevision(index).MatchesSearchString(searchString))
                     return index;
             }
 
             // We didn't find it so start searching from the bottom
             for (index = Revisions.RowCount - 1; index > startIndex; --index)
             {
-                if (((GitRevision)Revisions.GetRowData(index)).MatchesSearchString(searchString))
+                if (GetRevision(index).MatchesSearchString(searchString))
                     return index;
             }
 
@@ -417,6 +410,7 @@ namespace GitUI
             inMemAuthorFilter = string.Empty;
             if (!string.IsNullOrEmpty(filter))
             {
+                // hash filtering only possible in memory
                 var cmdLineSafe = GitCommandHelpers.VersionInUse.IsRegExStringCmdPassable(filter);
                 revListArgs = " --regexp-ignore-case ";
                 if (parameters[0])
@@ -491,6 +485,9 @@ namespace GitUI
 
         public void SetSelectedIndex(int index)
         {
+            if (Revisions.Rows[index].Selected)
+                return;
+
             Revisions.ClearSelection();
 
             Revisions.Rows[index].Selected = true;
@@ -501,19 +498,19 @@ namespace GitUI
 
         public void SetSelectedRevision(GitRevision revision)
         {
-            Revisions.ClearSelection();
-
             if (revision != null)
             {
                 for (var i = 0; i < Revisions.RowCount; i++)
                 {
-                    if (((GitRevision)Revisions.GetRowData(i)).Guid == revision.Guid)
+                    if (GetRevision(i).Guid == revision.Guid)
                     {
                         SetSelectedIndex(i);
-                        break;
+                        return;
                     }
                 }
             }
+
+            Revisions.ClearSelection();
             Revisions.Select();
         }
 
@@ -522,10 +519,10 @@ namespace GitUI
             if (Revisions.SelectedRows.Count > 0)
                 LastRow = Revisions.SelectedRows[0].Index;
 
-            SelecctionTimer.Enabled = false;
-            SelecctionTimer.Stop();
-            SelecctionTimer.Enabled = true;
-            SelecctionTimer.Start();
+            SelectionTimer.Enabled = false;
+            SelectionTimer.Stop();
+            SelectionTimer.Enabled = true;
+            SelectionTimer.Start();
         }
 
         public List<GitRevision> GetRevisions()
@@ -552,7 +549,7 @@ namespace GitUI
                 /* Committer Date */ "%ci%n" +
                 /* Commit Message */ "%s";
             string cmd = "log -n 1 --pretty=format:" + formatString + " " + CurrentCheckout;
-            var RevInfo = GitCommandHelpers.RunCmd(Settings.GitCommand, cmd);
+            var RevInfo = Settings.Module.RunGitCmd(cmd);
             string[] Infos = RevInfo.Split('\n');
             var Revision = new GitRevision(CurrentCheckout)
             {
@@ -566,7 +563,7 @@ namespace GitUI
             Revision.AuthorDate = date;
             DateTime.TryParse(Infos[4], out date);
             Revision.CommitDate = date;
-            List<GitHead> heads = GitCommandHelpers.GetHeads(true, true);
+            List<GitHead> heads = Settings.Module.GetHeads(true, true);
             foreach (GitHead head in heads)
             {
                 if (head.Guid.Equals(Revision.Guid))
@@ -685,7 +682,7 @@ namespace GitUI
 
                 DisposeRevisionGraphCommand();
 
-                var newCurrentCheckout = GitCommandHelpers.GetCurrentCheckout();
+                var newCurrentCheckout = Settings.Module.GetCurrentCheckout();
 
                 // If the current checkout changed, don't get the currently selected rows, select the
                 // new current checkout instead.
@@ -704,12 +701,19 @@ namespace GitUI
                 Revisions.Clear();
                 Error.Visible = false;
 
-                if (!Settings.ValidWorkingDir())
+                if (!Settings.Module.ValidWorkingDir())
                 {
                     Revisions.Visible = false;
                     NoCommits.Visible = true;
                     Loading.Visible = false;
                     NoGit.Visible = true;
+                    string dir = Settings.Module.WorkingDir;
+                    if (String.IsNullOrEmpty(dir) || !Directory.Exists(dir) ||
+                        Directory.GetDirectories(dir).Length == 0 &&
+                        Directory.GetFiles(dir).Length == 0)
+                        CloneRepository.Show();
+                    else
+                        CloneRepository.Hide();
                     NoGit.BringToFront();
                     return;
                 }
@@ -763,7 +767,7 @@ namespace GitUI
             {
                 Error.Visible = true;
                 Error.BringToFront();
-                MessageBox.Show(exception.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, exception.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -867,14 +871,14 @@ namespace GitUI
 
             for (var i = 0; i < Revisions.RowCount; i++)
             {
-                if (((GitRevision)Revisions.GetRowData(i)).Guid == _initialSelectedRevision)
+                if (GetRevision(i).Guid == _initialSelectedRevision)
                     SetSelectedIndex(i);
             }
         }
 
         private string GetDateHeaderText()
         {
-            return Settings.ShowAuthorDate ? _authorDateCaption.Text : _commitDateCaption.Text;
+            return Settings.ShowAuthorDate ? Strings.GetAuthorDateText() : Strings.GetCommitDateText();
         }
 
         private void LoadRevisions()
@@ -886,8 +890,8 @@ namespace GitUI
 
             Revisions.SuspendLayout();
 
-            Revisions.Columns[1].HeaderText = _messageCaption.Text;
-            Revisions.Columns[2].HeaderText = _authorCaption.Text;
+            Revisions.Columns[1].HeaderText = Strings.GetMessageText();
+            Revisions.Columns[2].HeaderText = Strings.GetAuthorText();
             Revisions.Columns[3].HeaderText = GetDateHeaderText();
 
             Revisions.SelectionChanged -= RevisionsSelectionChanged;
@@ -918,10 +922,10 @@ namespace GitUI
                 return;
 
             _initialLoad = false;
-            SelecctionTimer.Enabled = false;
-            SelecctionTimer.Stop();
-            SelecctionTimer.Enabled = true;
-            SelecctionTimer.Start();
+            SelectionTimer.Enabled = false;
+            SelectionTimer.Stop();
+            SelectionTimer.Enabled = true;
+            SelectionTimer.Start();
         }
 
         private void RevisionsCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
@@ -1315,16 +1319,16 @@ namespace GitUI
             {
                 var form = new FormDiffSmall();
                 form.SetRevision(r[0]);
-                form.ShowDialog();
+                form.ShowDialog(this);
             }
             else
-                GitUICommands.Instance.StartCompareRevisionsDialog();
+                GitUICommands.Instance.StartCompareRevisionsDialog(this);
         }
 
-        private void SelecctionTimerTick(object sender, EventArgs e)
+        private void SelectionTimerTick(object sender, EventArgs e)
         {
-            SelecctionTimer.Enabled = false;
-            SelecctionTimer.Stop();
+            SelectionTimer.Enabled = false;
+            SelectionTimer.Stop();
             if (SelectionChanged != null)
                 SelectionChanged(this, e);
         }
@@ -1335,7 +1339,7 @@ namespace GitUI
                 return;
 
             var frm = new FormTagSmall { Revision = GetRevision(LastRow) };
-            frm.ShowDialog();
+            frm.ShowDialog(this);
             RefreshRevisions();
         }
 
@@ -1345,7 +1349,7 @@ namespace GitUI
                 return;
 
             var frm = new FormResetCurrentBranch(GetRevision(LastRow));
-            frm.ShowDialog();
+            frm.ShowDialog(this);
             RefreshRevisions();
             OnActionOnRepositoryPerformed();
         }
@@ -1356,7 +1360,7 @@ namespace GitUI
                 return;
             var frm = new FormBranchSmall { Revision = GetRevision(LastRow) };
 
-            if (frm.ShowDialog() == DialogResult.OK)
+            if (frm.ShowDialog(this) == DialogResult.OK)
             {
                 RefreshRevisions();
                 OnActionOnRepositoryPerformed();
@@ -1390,14 +1394,14 @@ namespace GitUI
 
         private void CommitClick(object sender, EventArgs e)
         {
-            GitUICommands.Instance.StartCommitDialog();
+            GitUICommands.Instance.StartCommitDialog(this);
             OnActionOnRepositoryPerformed();
             RefreshRevisions();
         }
 
         private void GitIgnoreClick(object sender, EventArgs e)
         {
-            GitUICommands.Instance.StartEditGitIgnoreDialog();
+            GitUICommands.Instance.StartEditGitIgnoreDialog(this);
         }
 
         private void ShowRemoteBranchesClick(object sender, EventArgs e)
@@ -1467,13 +1471,13 @@ namespace GitUI
                 return;
 
             var frm = new FormRevertCommitSmall(GetRevision(LastRow));
-            frm.ShowDialog();
+            frm.ShowDialog(this);
             RefreshRevisions();
         }
 
         private void FilterToolStripMenuItemClick(object sender, EventArgs e)
         {
-            _revisionFilter.ShowDialog();
+            _revisionFilter.ShowDialog(this);
             ForceRefreshRevisions();
         }
 
@@ -1488,7 +1492,7 @@ namespace GitUI
             if (Revisions.RowCount < LastRow || LastRow < 0 || Revisions.RowCount == 0)
                 return;
 
-            var inTheMiddleOfBisect = GitCommandHelpers.InTheMiddleOfBisect();
+            var inTheMiddleOfBisect = Settings.Module.InTheMiddleOfBisect();
             markRevisionAsBadToolStripMenuItem.Visible = inTheMiddleOfBisect;
             markRevisionAsGoodToolStripMenuItem.Visible = inTheMiddleOfBisect;
             stopBisectToolStripMenuItem.Visible = inTheMiddleOfBisect;
@@ -1497,10 +1501,11 @@ namespace GitUI
             var revision = GetRevision(LastRow);
 
             var tagDropDown = new ToolStripDropDown();
-            var branchDropDown = new ToolStripDropDown();
+            var deleteBranchDropDown = new ToolStripDropDown();
             var checkoutBranchDropDown = new ToolStripDropDown();
             var mergeBranchDropDown = new ToolStripDropDown();
             var rebaseDropDown = new ToolStripDropDown();
+            var renameDropDown = new ToolStripDropDown();
 
             var tagNameCopy = new ToolStripDropDown();
             var branchNameCopy = new ToolStripDropDown();
@@ -1515,7 +1520,9 @@ namespace GitUI
                 tagNameCopy.Items.Add(tagName);
             }
 
-            var allBranches = revision.Heads.Where(h => !h.IsTag && (h.IsHead || h.IsRemote));
+            //For now there is no action that could be done on currentBranch
+            string currentBranch = Settings.Module.GetSelectedBranch();
+            var allBranches = revision.Heads.Where(h => !h.IsTag && (h.IsHead || h.IsRemote) && !h.Name.Equals(currentBranch));
             var localBranches = allBranches.Where(b => !b.IsRemote);
 
             var branchesWithNoIdenticalRemotes = allBranches.Where(
@@ -1539,26 +1546,32 @@ namespace GitUI
                 branchName.Click += copyToClipBoard;
                 branchNameCopy.Items.Add(branchName);
 
-                //if (head.IsHead && !head.IsRemote)
+                //skip remote branches - they can not be deleted this way
+                if (!head.IsRemote)
                 {
                     toolStripItem = new ToolStripMenuItem(head.Name);
                     toolStripItem.Click += ToolStripItemClickBranch;
-                    branchDropDown.Items.Add(toolStripItem);
+                    deleteBranchDropDown.Items.Add(toolStripItem); //Add to delete branch
 
                     toolStripItem = new ToolStripMenuItem(head.Name);
-                    if (head.IsRemote)
-                        toolStripItem.Click += ToolStripItemClickCheckoutRemoteBranch;
-                    else
-                        toolStripItem.Click += ToolStripItemClickCheckoutBranch;
-                    checkoutBranchDropDown.Items.Add(toolStripItem);
+                    toolStripItem.Click += ToolStripItemClickRenameBranch;
+                    renameDropDown.Items.Add(toolStripItem); //Add to rename branch
                 }
+                
+                toolStripItem = new ToolStripMenuItem(head.Name);
+                if (head.IsRemote)
+                    toolStripItem.Click += ToolStripItemClickCheckoutRemoteBranch;
+                else
+                    toolStripItem.Click += ToolStripItemClickCheckoutBranch;
+                checkoutBranchDropDown.Items.Add(toolStripItem);
+
             }
 
             deleteTagToolStripMenuItem.DropDown = tagDropDown;
             deleteTagToolStripMenuItem.Visible = tagDropDown.Items.Count > 0;
 
-            deleteBranchToolStripMenuItem.DropDown = branchDropDown;
-            deleteBranchToolStripMenuItem.Visible = branchDropDown.Items.Count > 0;
+            deleteBranchToolStripMenuItem.DropDown = deleteBranchDropDown;
+            deleteBranchToolStripMenuItem.Visible = deleteBranchDropDown.Items.Count > 0;
 
             checkoutBranchToolStripMenuItem.DropDown = checkoutBranchDropDown;
             checkoutBranchToolStripMenuItem.Visible = checkoutBranchDropDown.Items.Count > 0;
@@ -1568,6 +1581,9 @@ namespace GitUI
 
             rebaseOnToolStripMenuItem.DropDown = rebaseDropDown;
             rebaseOnToolStripMenuItem.Visible = rebaseDropDown.Items.Count > 0;
+
+            renameBranchToolStripMenuItem.DropDown = renameDropDown;
+            renameBranchToolStripMenuItem.Visible = renameDropDown.Items.Count > 0;
 
             branchNameToolStripMenuItem.DropDown = branchNameCopy;
             branchNameToolStripMenuItem.Visible = branchNameCopy.Items.Count > 0;
@@ -1587,7 +1603,7 @@ namespace GitUI
             if (toolStripItem == null)
                 return;
 
-            new FormProcess(GitCommandHelpers.DeleteTagCmd(toolStripItem.Text)).ShowDialog();
+            new FormProcess(GitCommandHelpers.DeleteTagCmd(toolStripItem.Text)).ShowDialog(this);
             ForceRefreshRevisions();
         }
 
@@ -1598,7 +1614,7 @@ namespace GitUI
             if (toolStripItem == null)
                 return;
 
-            GitUICommands.Instance.StartDeleteBranchDialog(toolStripItem.Text);
+            GitUICommands.Instance.StartDeleteBranchDialog(this, toolStripItem.Text);
 
             ForceRefreshRevisions();
         }
@@ -1610,7 +1626,7 @@ namespace GitUI
             if (toolStripItem == null)
                 return;
 
-            new FormProcess("checkout \"" + toolStripItem.Text + "\"").ShowDialog();
+            new FormProcess("checkout \"" + toolStripItem.Text + "\"").ShowDialog(this);
 
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
@@ -1624,7 +1640,7 @@ namespace GitUI
                 return;
 
 
-            GitUICommands.Instance.StartCheckoutBranchDialog(toolStripItem.Text, true);
+            GitUICommands.Instance.StartCheckoutBranchDialog(this, toolStripItem.Text, true);
 
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
@@ -1637,7 +1653,7 @@ namespace GitUI
             if (toolStripItem == null)
                 return;
 
-            GitUICommands.Instance.StartMergeBranchDialog(toolStripItem.Text);
+            GitUICommands.Instance.StartMergeBranchDialog(this, toolStripItem.Text);
 
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
@@ -1650,7 +1666,20 @@ namespace GitUI
             if (toolStripItem == null)
                 return;
 
-            GitUICommands.Instance.StartRebaseDialog(toolStripItem.Text);
+            GitUICommands.Instance.StartRebaseDialog(this, toolStripItem.Text);
+
+            ForceRefreshRevisions();
+            OnActionOnRepositoryPerformed();
+        }
+
+        private void ToolStripItemClickRenameBranch(object sender, EventArgs e)
+        {
+            var toolStripItem = sender as ToolStripItem;
+
+            if (toolStripItem == null)
+                return;
+
+            GitUICommands.Instance.StartRenameDialog(toolStripItem.Text);
 
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
@@ -1661,10 +1690,10 @@ namespace GitUI
             if (Revisions.RowCount <= LastRow || LastRow < 0)
                 return;
 
-            if (MessageBox.Show("Are you sure to checkout the selected revision", "Checkout revision",
+            if (MessageBox.Show(this, _areYouSureYouWantCheckout.Text, _areYouSureYouWantCheckoutCaption.Text,
                                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
-            new FormProcess(string.Format("checkout \"{0}\"", GetRevision(LastRow).Guid)).ShowDialog();
+            new FormProcess(string.Format("checkout \"{0}\"", GetRevision(LastRow).Guid)).ShowDialog(this);
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
         }
@@ -1689,7 +1718,7 @@ namespace GitUI
                 return;
 
             var frm = new FormCherryPickCommitSmall(GetRevision(LastRow));
-            frm.ShowDialog();
+            frm.ShowDialog(this);
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
         }
@@ -1710,7 +1739,7 @@ namespace GitUI
                 return;
 
             var frm = new FormCommit(commitKind, GetRevision(LastRow));
-            frm.ShowDialog();
+            frm.ShowDialog(this);
             ForceRefreshRevisions();
             OnActionOnRepositoryPerformed();
         }
@@ -1733,30 +1762,43 @@ namespace GitUI
             var span = DateTime.Now - time;
 
             if (span.Minutes < 0)
-                return string.Format(_secondsAgo.Text, span.Seconds);
+            {
+                if (span.Seconds == 1)
+                    return string.Format(Strings.Get1SecondAgoText(), span.Seconds);
+                else
+                    return string.Format(Strings.GetNSecondsAgoText(), span.Seconds);
+            }
 
             if (span.TotalHours < 1)
-                return string.Format(_minutesAgo.Text, span.Minutes + Math.Round(span.Seconds / 60.0, 0));
+            {
+                if (span.Minutes == 1)
+                    return string.Format(Strings.Get1MinuteAgoText(), span.Seconds);
+                else
+                    return string.Format(Strings.GetNMinutesAgoText(), span.Minutes + Math.Round(span.Seconds / 60.0, 0));
+            }
 
             if (span.TotalHours + Math.Round(span.Minutes / 60.0, 0) < 2)
-                return string.Format(_hourAgo.Text, (int)span.TotalHours + Math.Round(span.Minutes / 60.0, 0));
+                return string.Format(Strings.Get1HourAgoText(), (int)span.TotalHours + Math.Round(span.Minutes / 60.0, 0));
 
             if (span.TotalHours < 24)
-                return string.Format(_hoursAgo.Text, (int)span.TotalHours + Math.Round(span.Minutes / 60.0, 0));
+                return string.Format(Strings.GetNHoursAgoText(), (int)span.TotalHours + Math.Round(span.Minutes / 60.0, 0));
 
             if (span.TotalDays + Math.Round(span.Hours / 24.0, 0) < 2)
-                return string.Format(_dayAgo.Text, (int)span.TotalDays + Math.Round(span.Hours / 24.0, 0));
+                return string.Format(Strings.Get1DayAgoText(), (int)span.TotalDays + Math.Round(span.Hours / 24.0, 0));
 
             if (span.TotalDays < 30)
-                return string.Format(_daysAgo.Text, (int)span.TotalDays + Math.Round(span.Hours / 24.0, 0));
+                return string.Format(Strings.GetNDaysAgoText(), (int)span.TotalDays + Math.Round(span.Hours / 24.0, 0));
 
             if (span.TotalDays < 45)
-                return string.Format(_monthAgo.Text, "1");
+                return string.Format(Strings.Get1MonthAgoText(), "1");
 
             if (span.TotalDays < 365)
-                return string.Format(_monthsAgo.Text, (int)Math.Round(span.TotalDays / 30, 0));
+                return string.Format(Strings.GetNMonthsAgoText(), (int)Math.Round(span.TotalDays / 30, 0));
 
-            return string.Format(_yearsAgo.Text, string.Format("{0:#.#} ", Math.Round(span.TotalDays / 365)));
+            if (span.TotalDays == 365)
+                return string.Format(Strings.Get1YearAgoText(), string.Format("{0:#.#} ", Math.Round(span.TotalDays / 365)));
+            else
+                return string.Format(Strings.GetNYearsAgoText(), string.Format("{0:#.#} ", Math.Round(span.TotalDays / 365)));
         }
 
         private void UpdateGraph(GitRevision rev)
@@ -1772,9 +1814,9 @@ namespace GitUI
                     bool stagedChanges = false;
                     //Only check for tracked files. This usually makes more sense and it performs a lot
                     //better then checking for untrackd files.
-                    if (GitCommandHelpers.GetTrackedChangedFiles().Count > 0)
+                    if (Settings.Module.GetTrackedChangedFiles().Count > 0)
                         uncommittedChanges = true;
-                    if (GitCommandHelpers.GetStagedFiles().Count > 0)
+                    if (Settings.Module.GetStagedFiles().Count > 0)
                         stagedChanges = true;
 
                     if (uncommittedChanges)
@@ -1847,7 +1889,7 @@ namespace GitUI
                 return;
 
             Settings.CloseProcessDialog = false;
-            new FormProcess(GitCommandHelpers.MarkRevisionBisectCmd(false, GetRevision(LastRow).Guid)).ShowDialog();
+            new FormProcess(GitCommandHelpers.MarkRevisionBisectCmd(false, GetRevision(LastRow).Guid)).ShowDialog(this);
             RefreshRevisions();
         }
 
@@ -1857,13 +1899,13 @@ namespace GitUI
                 return;
 
             Settings.CloseProcessDialog = false;
-            new FormProcess(GitCommandHelpers.MarkRevisionBisectCmd(true, GetRevision(LastRow).Guid)).ShowDialog();
+            new FormProcess(GitCommandHelpers.MarkRevisionBisectCmd(true, GetRevision(LastRow).Guid)).ShowDialog(this);
             RefreshRevisions();
         }
 
         private void stopBisectToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            new FormProcess(GitCommandHelpers.StopBisectCmd()).ShowDialog();
+            new FormProcess(GitCommandHelpers.StopBisectCmd()).ShowDialog(this);
             RefreshRevisions();
         }
 
@@ -1925,7 +1967,7 @@ namespace GitUI
 
         #region Drag/drop patch files on revision grid
 
-        static void Revisions_DragDrop(object sender, DragEventArgs e)
+        void Revisions_DragDrop(object sender, DragEventArgs e)
         {
             var fileNameArray = e.Data.GetData(DataFormats.FileDrop) as Array;
             if (fileNameArray != null)
@@ -1933,7 +1975,7 @@ namespace GitUI
                 if (fileNameArray.Length > 10)
                 {
                     //Some users need to be protected against themselves!
-                    MessageBox.Show("For you own protection dropping more than 10 patch files at once is blocked!");
+                    MessageBox.Show(this, _droppingFilesBlocked.Text);
                     return;
                 }
 
@@ -1944,7 +1986,7 @@ namespace GitUI
                     if (!string.IsNullOrEmpty(fileName) && fileName.EndsWith(".patch", StringComparison.InvariantCultureIgnoreCase))
                     {
                         //Start apply patch dialog for each dropped patch file...
-                        GitUICommands.Instance.StartApplyPatchDialog(fileName);
+                        GitUICommands.Instance.StartApplyPatchDialog(this, fileName);
                     }
                 }
             }
@@ -1984,9 +2026,14 @@ namespace GitUI
         }
         private void InitRepository_Click(object sender, EventArgs e)
         {
-            if (GitUICommands.Instance.StartInitializeDialog(Settings.WorkingDir))
+            if (GitUICommands.Instance.StartInitializeDialog(this, Settings.WorkingDir))
                 ForceRefreshRevisions();
+        }
 
+        private void CloneRepository_Click(object sender, EventArgs e)
+        {
+            if (GitUICommands.Instance.StartCloneDialog(this))
+                ForceRefreshRevisions();
         }
 
         private void ShowRevisionGraphToolStripMenuItemClick(object sender, EventArgs e)
@@ -2159,6 +2206,16 @@ namespace GitUI
         }
 
         #endregion
+
+        private void toolStripMenuWithOneItem_Click(object sender, EventArgs e)
+        {
+            if (sender is ToolStripMenuItem) 
+            {
+                ToolStripMenuItem item = sender as ToolStripMenuItem;
+                if (item.DropDown != null && item.DropDown.Items.Count == 1)
+                    item.DropDown.Items[0].PerformClick();
+            }
+        }
 
         public bool IsCurrentBranchOutOfDateWithTrackingRemote()
         {
